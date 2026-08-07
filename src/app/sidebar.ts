@@ -11,9 +11,15 @@ export interface NavNode {
 export const NAV_TREE: NavNode[] = [
 	{
 		id: "newtonian",
-		label: "Newtonian Physics",
+		label: "Classical Physics",
 		type: "folder",
-		children: [{ id: "solar-system", label: "Orbital Bodies", type: "sim" }],
+		children: [
+			{
+				id: "solar-system",
+				label: "N-body Simulation - Solar System",
+				type: "sim",
+			},
+		],
 	},
 ];
 
