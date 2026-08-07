@@ -1,81 +1,89 @@
 import * as THREE from "three";
 
 // ═══════════════════════════════════════════════════════════
-//  Physics — all real SI units (m, kg, s)
+//  Unit system
+//  • Physics runs in real SI units: metres, kilograms, seconds.
+//  • Rendering converts once: 1 render unit = 1 AU (RENDER_SCALE).
+//  Everything on screen is true scale — sizes, distances, light
+//  falloff — like NASA Eyes. Never mix the two spaces.
 // ═══════════════════════════════════════════════════════════
 
 export const G = 6.6743e-11; // m³ kg⁻¹ s⁻²
+export const AU = 1.496e11; // m
+export const SECONDS_PER_DAY = 86400;
 
-export const MASS_SUN = 1.989e30; // kg
-export const MASS_EARTH = 5.972e24; // kg
-export const MASS_MOON = 7.348e22; // kg
-export const MASS_MARS = 6.417e23; // kg
+/** Multiply metres by this to get render units (1 render unit = 1 AU). */
+export const RENDER_SCALE = 1 / AU;
 
-// Perihelion / perigee distances
-export const DIST_EARTH_SUN = 1.471e11; // m
-export const DIST_EARTH_MOON = 3.626e8; // m
-export const DIST_MARS_SUN = 2.067e11; // m
+// ── Masses (kg) ────────────────────────────────────────
+export const MASS_SUN = 1.989e30;
+export const MASS_EARTH = 5.972e24;
+export const MASS_MOON = 7.348e22;
+export const MASS_MARS = 6.417e23;
 
-// ── Scaling (1 time-unit = 1 day) ─────────────────────
-export const LENGTH_SCALE = 1.496e11; // 1 Astronomical Unit (AU)
-export const MASS_SCALE = 1.989e30; //1 Solar Mass
-export const TIME_SCALE = 86400; // seconds per day
+// ── Radii (m) ──────────────────────────────────────────
+export const RADIUS_SUN = 6.957e8;
+export const RADIUS_EARTH = 6.371e6;
+export const RADIUS_MOON = 1.737e6;
+export const RADIUS_MARS = 3.389e6;
 
-// ── Semi-major Axes ─────────────────────
-export const marssemimajor = 2.279e11 / LENGTH_SCALE; // m
-export const earthsemimajor = 1.496e11 / LENGTH_SCALE; // m
-export const moonSemiMajor = 3.84399e8 / LENGTH_SCALE; // m
+// ── Orbit geometry (m) ─────────────────────────────────
+// Perihelion / perigee — the bodies start here.
+export const DIST_EARTH_SUN = 1.471e11;
+export const DIST_EARTH_MOON = 3.626e8;
+export const DIST_MARS_SUN = 2.067e11;
 
-export const RADIUS_SUN = 6.957e8 / LENGTH_SCALE; // m
-export const RADIUS_EARTH = 6.371e6 / LENGTH_SCALE; // m
-export const RADIUS_MOON = 1.737e6 / LENGTH_SCALE; // m
-export const RADIUS_MARS = 3.389e6 / LENGTH_SCALE; // m
+export const EARTH_SEMI_MAJOR = 1.496e11;
+export const MARS_SEMI_MAJOR = 2.279e11;
+export const MOON_SEMI_MAJOR = 3.84399e8;
 
-export const scaledG =
-	(G * TIME_SCALE * TIME_SCALE * MASS_SCALE) /
-	(LENGTH_SCALE * LENGTH_SCALE * LENGTH_SCALE);
+// ── Rotation (sidereal period in s, axial tilt in rad) ─
+export const SPIN_SUN = 25.38 * SECONDS_PER_DAY;
+export const SPIN_EARTH = 86164;
+export const SPIN_MOON = 27.322 * SECONDS_PER_DAY; // tidally locked
+export const SPIN_MARS = 88643;
 
-export const scaledMassSun = MASS_SUN / MASS_SCALE;
-export const scaledMassEarth = MASS_EARTH / MASS_SCALE;
-export const scaledMassMoon = MASS_MOON / MASS_SCALE;
-export const scaledMassMars = MASS_MARS / MASS_SCALE;
+export const TILT_EARTH = THREE.MathUtils.degToRad(23.44);
+export const TILT_MARS = THREE.MathUtils.degToRad(25.19);
 
-export const scaledDistEarthSun = DIST_EARTH_SUN / LENGTH_SCALE;
-export const scaledDistEarthMoon = DIST_EARTH_MOON / LENGTH_SCALE;
-export const scaledDistMarsSun = DIST_MARS_SUN / LENGTH_SCALE;
-
-// ── Initial conditions ─────────────────────────────────
-export const SUN_POSITION = new THREE.Vector3(0, 0, 0);
-export const SUN_VELOCITY = new THREE.Vector3(0, 0, 0);
-export const SUN_ACCELERATION = new THREE.Vector3(0, 0, 0);
 export const SUN_TEMPERATURE = 5778; // K — solar photosphere
 
-// Earth — starts at perihelion with speed from vis‑viva
-export const EARTH_POSITION = new THREE.Vector3(DIST_EARTH_SUN, 0, 0);
-const _earthSpeed = Math.sqrt(
-	G * MASS_SUN * (2 / DIST_EARTH_SUN - 1 / EARTH_SEMI_MAJOR),
-);
-export const EARTH_VELOCITY = new THREE.Vector3(0, 0, _earthSpeed);
-export const EARTH_ACCELERATION = new THREE.Vector3(0, 0, 0);
+// ── Initial conditions ─────────────────────────────────
+// Bodies start at perihelion on +X. Velocity along −Z makes the
+// orbits counterclockwise seen from +Y (north), as in reality.
+// Speeds come from vis-viva: v² = GM (2/r − 1/a).
 
-// Moon — circular orbit around Earth (starting at perigee)
+const visViva = (M: number, r: number, a: number) =>
+	Math.sqrt(G * M * (2 / r - 1 / a));
+
+export const SUN_POSITION = new THREE.Vector3(0, 0, 0);
+export const SUN_VELOCITY = new THREE.Vector3(0, 0, 0);
+
+export const EARTH_POSITION = new THREE.Vector3(DIST_EARTH_SUN, 0, 0);
+export const EARTH_VELOCITY = new THREE.Vector3(
+	0,
+	0,
+	-visViva(MASS_SUN, DIST_EARTH_SUN, EARTH_SEMI_MAJOR),
+);
+
 export const MOON_POSITION = EARTH_POSITION.clone().add(
 	new THREE.Vector3(DIST_EARTH_MOON, 0, 0),
 );
-const _moonSpeed = Math.sqrt((G * MASS_EARTH) / DIST_EARTH_MOON);
 export const MOON_VELOCITY = EARTH_VELOCITY.clone().add(
-	new THREE.Vector3(0, 0, _moonSpeed),
+	new THREE.Vector3(
+		0,
+		0,
+		-visViva(MASS_EARTH, DIST_EARTH_MOON, MOON_SEMI_MAJOR),
+	),
 );
-export const MOON_ACCELERATION = new THREE.Vector3(0, 0, 0);
 
-// Mars — starts at perihelion with speed from vis‑viva
 export const MARS_POSITION = new THREE.Vector3(DIST_MARS_SUN, 0, 0);
-const _marsSpeed = Math.sqrt(
-	G * MASS_SUN * (2 / DIST_MARS_SUN - 1 / MARS_SEMI_MAJOR),
+export const MARS_VELOCITY = new THREE.Vector3(
+	0,
+	0,
+	-visViva(MASS_SUN, DIST_MARS_SUN, MARS_SEMI_MAJOR),
 );
-export const MARS_VELOCITY = new THREE.Vector3(0, 0, _marsSpeed);
-export const MARS_ACCELERATION = new THREE.Vector3(0, 0, 0);
 
 // ── Simulation knobs ───────────────────────────────────
 export const PLAYBACK_SPEED = 1; // sim-days per real second
-export const MAX_PHYSICS_STEP = 0.25; // max sim-days per substep
+export const MAX_STEP_SECONDS = 0.1 * SECONDS_PER_DAY; // physics substep cap

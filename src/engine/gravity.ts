@@ -1,30 +1,29 @@
-import { Body } from "./Body";
+import type { Body } from "./Body";
 import { Vector3 } from "three";
 
-export default function applyGravity(bodies: Body[], dt: number, G: number) {
-	const accelerations = bodies.map(() => new Vector3());
+// Softening floor — prevents division blow-up if bodies nearly
+// coincide. (1 km)², far below any orbital separation.
+const SOFTENING_SQ = 1e6;
 
+const _dir = new Vector3();
+
+/**
+ * Accumulate pairwise gravitational acceleration (each pair visited
+ * once — Newton's third law gives the opposite member for free),
+ * then advance every body by dt.
+ */
+export default function applyGravity(bodies: Body[], dt: number, G: number) {
 	for (let i = 0; i < bodies.length; i++) {
-		for (let j = 0; j < bodies.length; j++) {
-			if (i === j) continue;
-			const direction = new Vector3().subVectors(
-				bodies[j].position,
-				bodies[i].position,
-			);
-			// Softening floor — prevents division blow-up when bodies
-			// nearly coincide.  1e6 = (1 km)², far below any orbital
-			// separation (Earth–Moon ≈ 1.3e17 m²).
-			const distanceSq = Math.max(direction.lengthSq(), 1e6);
-			const gravityForce = (G * bodies[i].mass * bodies[j].mass) / distanceSq;
-			accelerations[i].addScaledVector(
-				direction.normalize(),
-				gravityForce / bodies[i].mass,
-			);
+		for (let j = i + 1; j < bodies.length; j++) {
+			const a = bodies[i];
+			const b = bodies[j];
+			_dir.subVectors(b.position, a.position);
+			const distSq = Math.max(_dir.lengthSq(), SOFTENING_SQ);
+			_dir.normalize();
+			const gOverD2 = G / distSq;
+			a.acceleration.addScaledVector(_dir, gOverD2 * b.mass);
+			b.acceleration.addScaledVector(_dir, -gOverD2 * a.mass);
 		}
 	}
-
-	for (let i = 0; i < bodies.length; i++) {
-		bodies[i].acceleration.copy(accelerations[i]);
-		bodies[i].update(dt);
-	}
+	for (const body of bodies) body.update(dt);
 }

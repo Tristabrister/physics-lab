@@ -16,7 +16,8 @@ physics-lab/
     │
     ├── app/                  ← app shell
     │   ├── router.ts         ← hash-based SPA router (SimModule interface)
-    │   └── navbar.ts         ← nav links with active-state styling
+    │   ├── sidebar.ts        ← collapsible nav tree
+    │   └── pause.ts          ← global pause state (P key + GUI checkbox)
     │
     ├── ui/                   ← reusable UI components
     │   ├── gui.ts            ← lil-gui panel factory
@@ -25,8 +26,8 @@ physics-lab/
     └── sims/                 ← one folder per simulation
         ├── solar-system/
         │   ├── index.ts      ← SimModule: init / update / destroy
-        │   ├── constants.ts  ← masses, distances, scaling, initial conditions
-        │   └── setup.ts      ← body + mesh creation for this sim
+        │   ├── constants.ts  ← real SI constants + RENDER_SCALE (1 unit = 1 AU)
+        │   └── setup.ts      ← planet factory + procedural sun for this sim
         └── _template/
             └── index.ts      ← copy this to start a new sim
 

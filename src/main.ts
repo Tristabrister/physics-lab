@@ -10,6 +10,7 @@ import { createStarfield } from "./renderer/starfield";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { Router } from "./app/router";
 import { createSidebar } from "./app/sidebar";
 import { isPaused, togglePaused, onPauseChange } from "./app/pause";
@@ -26,24 +27,24 @@ createLighting(scene);
 createStarfield(scene);
 app.appendChild(renderer.domElement);
 
-// ── Bloom post-processing ──────────────────────────────
+// ── Post-processing: linear HDR render → bloom → tone map ──
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-
-const bloomPass = new UnrealBloomPass(
-	new THREE.Vector2(window.innerWidth, window.innerHeight),
-	0.5, // strength  — soft sun glow
-	0.8, // radius    — natural corona spread
-	0.55, // threshold — sun emissive (0.66–0.94 lum) blooms fully; planets (≤0.5) don't
+composer.addPass(
+	new UnrealBloomPass(
+		new THREE.Vector2(window.innerWidth, window.innerHeight),
+		0.45, // strength — soft corona glow
+		0.6, // radius
+		1.0, // threshold — only the HDR sun (>1.0) blooms, planets never do
+	),
 );
-composer.addPass(bloomPass);
+composer.addPass(new OutputPass()); // applies ACES tone mapping + sRGB
 
 window.addEventListener("resize", () => {
 	camera.aspect = window.innerWidth / window.innerHeight;
 	camera.updateProjectionMatrix();
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	composer.setSize(window.innerWidth, window.innerHeight);
-	bloomPass.resolution.set(window.innerWidth, window.innerHeight);
 });
 
 // ── Router ─────────────────────────────────────────────
@@ -52,10 +53,10 @@ router.register("solar-system", () => import("./sims/solar-system/index"));
 createSidebar(router, app);
 router.start();
 
-// ── WASD camera panning ────────────────────────────────
+// ── Keyboard state ─────────────────────────────────────
 const keys: Record<string, boolean> = {};
 window.addEventListener("keydown", (e) => {
-	// Prevent browser shortcuts when flying (Ctrl = find, Space = scroll, WASD = scroll)
+	// Prevent browser shortcuts while flying (Ctrl = find, Space = scroll)
 	if (
 		[
 			"w",
@@ -78,6 +79,10 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("keyup", (e) => {
 	keys[e.key.toLowerCase()] = false;
 });
+window.addEventListener("blur", () => {
+	// Release all keys when the window loses focus (prevents stuck keys)
+	for (const k of Object.keys(keys)) keys[k] = false;
+});
 
 // ── Pause / play ──────────────────────────────────────
 window.addEventListener("keydown", (e) => {
@@ -87,16 +92,12 @@ window.addEventListener("keydown", (e) => {
 	}
 });
 
-// ── Prevent accidental text selection on Ctrl‑click ────
+// ── Prevent accidental text selection on Ctrl-click ────
 document.addEventListener("selectstart", (e) => {
 	if (keys["control"]) e.preventDefault();
 });
-window.addEventListener("blur", () => {
-	// Release all keys when the window loses focus (prevents stuck keys)
-	for (const k of Object.keys(keys)) keys[k] = false;
-});
 
-// ── Middle‑mouse drag rotates like left‑mouse ───────────
+// ── Middle-mouse drag rotates like left-mouse ───────────
 controls.mouseButtons = {
 	LEFT: THREE.MOUSE.ROTATE,
 	MIDDLE: THREE.MOUSE.ROTATE,
@@ -115,6 +116,12 @@ const raycaster = new THREE.Raycaster();
 let followTarget: THREE.Mesh | null = null;
 const lastBodyPos = new THREE.Vector3();
 
+/** True (unscaled) mesh radius in render units. */
+function meshRadius(mesh: THREE.Mesh) {
+	if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+	return mesh.geometry.boundingSphere!.radius;
+}
+
 // Info popup
 const infoPanel = document.createElement("div");
 infoPanel.id = "info-panel";
@@ -127,7 +134,7 @@ connectorLine.id = "connector-line";
 connectorLine.style.display = "none";
 app.appendChild(connectorLine);
 
-// Object‑list pills
+// Object-list pills
 const objectList = document.createElement("div");
 objectList.id = "object-list";
 app.appendChild(objectList);
@@ -150,43 +157,74 @@ function refreshObjectList() {
 objectList.addEventListener("click", (e) => {
 	const btn = (e.target as HTMLElement).closest("button");
 	if (!btn) return;
-	const name = btn.textContent!;
-	const found = router.getBodyList().find((b) => b.name === name);
-	if (found) {
-		followTarget = found.mesh;
-		zoomToBody(followTarget);
-		infoPanel.style.display = "block";
-		connectorLine.style.display = "block";
-		refreshObjectList();
-	}
+	const found = router.getBodyList().find((b) => b.name === btn.textContent);
+	if (found) followBody(found.mesh);
 });
 
-function clearFollow() {
-	followTarget = null;
-	infoPanel.style.display = "none";
-	connectorLine.style.display = "none";
+// ── Fly-to animation (NASA Eyes style) ─────────────────
+// Interpolates the camera's offset from the body: direction linearly,
+// distance geometrically — so the zoom feels constant-rate even when
+// covering four orders of magnitude.
+const FLY_DURATION = 1.8; // s
+let flyAnim: {
+	t: number;
+	startDir: THREE.Vector3;
+	endDir: THREE.Vector3;
+	startDist: number;
+	endDist: number;
+} | null = null;
+
+function followBody(mesh: THREE.Mesh) {
+	followTarget = mesh;
+	lastBodyPos.copy(mesh.position);
+
+	const radius = meshRadius(mesh);
+	const offset = new THREE.Vector3().subVectors(camera.position, mesh.position);
+	const startDist = offset.length();
+	const startDir =
+		startDist > 1e-12
+			? offset.clone().divideScalar(startDist)
+			: new THREE.Vector3(0.5, 0.5, 1).normalize();
+
+	flyAnim = {
+		t: 0,
+		startDir,
+		// Drift toward a slightly elevated approach for a nicer arrival angle
+		endDir: startDir.clone().add(new THREE.Vector3(0, 0.35, 0)).normalize(),
+		startDist,
+		endDist: radius * 5, // body fills ~1/4 of the screen height on arrival
+	};
+
+	// Wheel can't push the camera inside the body while following
+	controls.minDistance = radius * 1.4;
+
+	infoPanel.style.display = "block";
+	connectorLine.style.display = "block";
+	lastBodyCount = -1; // force pill refresh
 	refreshObjectList();
 }
 
-/** Pull the camera to a comfortable viewing distance from a followed body. */
-function zoomToBody(body: THREE.Mesh) {
-	const radius = body.geometry.boundingSphere?.radius ?? 1;
-	const targetDist = radius * 100;
-
-	// Use the current camera→body direction, or default to a 45° overhead view
-	const dir = new THREE.Vector3()
-		.subVectors(camera.position, body.position)
-		.normalize();
-	if (dir.length() < 0.01) dir.set(0.5, 0.5, 1).normalize();
-
-	camera.position.copy(body.position).addScaledVector(dir, targetDist);
-	controls.target.copy(body.position);
-	lastBodyPos.copy(body.position);
+function clearFollow() {
+	followTarget = null;
+	flyAnim = null;
+	controls.minDistance = 0;
+	infoPanel.style.display = "none";
+	connectorLine.style.display = "none";
+	lastBodyCount = -1;
+	refreshObjectList();
 }
 
-// Click to pick a body
+// Click to pick a body — but not when the mouse was dragged (orbiting),
+// otherwise every drag-release would clear the current follow.
+let downX = 0;
+let downY = 0;
+renderer.domElement.addEventListener("pointerdown", (e) => {
+	downX = e.clientX;
+	downY = e.clientY;
+});
 renderer.domElement.addEventListener("click", (e) => {
 	if (e.button !== 0) return; // left-click only
+	if (Math.hypot(e.clientX - downX, e.clientY - downY) > 5) return; // drag, not click
 
 	const rect = renderer.domElement.getBoundingClientRect();
 	const mouse = new THREE.Vector2(
@@ -195,19 +233,12 @@ renderer.domElement.addEventListener("click", (e) => {
 	);
 
 	raycaster.setFromCamera(mouse, camera);
-	const hits = raycaster.intersectObjects(scene.children, true);
-
-	for (const hit of hits) {
-		const obj = hit.object;
-		// Walk up to find a mesh that might belong to a Body
-		let cur: THREE.Object3D | null = obj;
+	for (const hit of raycaster.intersectObjects(scene.children, true)) {
+		// Walk up in case the hit is a child of a body mesh
+		let cur: THREE.Object3D | null = hit.object;
 		while (cur) {
-			if ((cur as THREE.Mesh).isMesh && cur.userData._bodyMesh) {
-				followTarget = cur as THREE.Mesh;
-				zoomToBody(followTarget);
-				infoPanel.style.display = "block";
-				connectorLine.style.display = "block";
-				refreshObjectList();
+			if (cur.userData.body) {
+				followBody(cur as THREE.Mesh);
 				return;
 			}
 			cur = cur.parent;
@@ -218,27 +249,39 @@ renderer.domElement.addEventListener("click", (e) => {
 });
 
 // ── Animation loop ─────────────────────────────────────
+const easeInOut = (t: number) => t * t * (3 - 2 * t);
 let lastTime = 0;
 
 function animate(time: number) {
 	const frameSeconds = Math.min((time - lastTime) / 1000, 0.1);
 	lastTime = time;
 
-	// WASD — fly the camera through space (move position + target together).
-	// Mouse drag still orbits around the current target as usual.
-	// Skip when following — the camera is locked to the body.
+	// WASD — fly the camera through space (position + orbit target move
+	// together; mouse drag still orbits). Speed scales with the distance
+	// to the nearest body surface: gentle glide up close, AUs per second
+	// in deep space. Skipped while following — the camera is locked on.
 	if (!followTarget) {
-		const flySpeed = 5 * frameSeconds * (keys["shift"] ? 2 : 1);
+		let nearestSurface = camera.position.distanceTo(controls.target);
+		for (const body of router.getBodyList()) {
+			const d =
+				camera.position.distanceTo(body.mesh.position) - meshRadius(body.mesh);
+			if (d < nearestSurface) nearestSurface = d;
+		}
+		const flySpeed =
+			Math.max(nearestSurface, 1e-5) *
+			1.2 *
+			frameSeconds *
+			(keys["shift"] ? 4 : 1);
+
 		const forward = new THREE.Vector3()
 			.subVectors(controls.target, camera.position)
 			.normalize();
 		const right = new THREE.Vector3()
 			.crossVectors(forward, camera.up)
 			.normalize();
-		const up = camera.up.clone();
+		const up = camera.up;
 
 		const move = new THREE.Vector3();
-
 		if (keys["w"] || keys["arrowup"]) move.addScaledVector(forward, flySpeed);
 		if (keys["s"] || keys["arrowdown"])
 			move.addScaledVector(forward, -flySpeed);
@@ -251,23 +294,37 @@ function animate(time: number) {
 		camera.position.add(move);
 	}
 
-	// Update current sim (skipped while paused)
+	// Advance the current sim (skipped while paused)
 	if (!isPaused()) {
 		router.update(frameSeconds);
 	}
 
-	// Refresh object list (cheap DOM check, runs once per frame)
 	refreshObjectList();
 
-	// ── Third‑person follow ──────────────────────────
+	// ── Follow + fly-to ──────────────────────────────
 	if (followTarget) {
 		const targetPos = followTarget.position;
-		const delta = targetPos.clone().sub(lastBodyPos);
-		camera.position.add(delta);
+
+		if (flyAnim) {
+			// Animated approach in body-relative space
+			flyAnim.t = Math.min(flyAnim.t + frameSeconds / FLY_DURATION, 1);
+			const k = easeInOut(flyAnim.t);
+			const dist =
+				flyAnim.startDist * Math.pow(flyAnim.endDist / flyAnim.startDist, k);
+			const dir = flyAnim.startDir
+				.clone()
+				.lerp(flyAnim.endDir, k)
+				.normalize();
+			camera.position.copy(targetPos).addScaledVector(dir, dist);
+			if (flyAnim.t >= 1) flyAnim = null;
+		} else {
+			// Locked on: ride along with the body
+			camera.position.add(targetPos.clone().sub(lastBodyPos));
+		}
 		controls.target.copy(targetPos);
 		lastBodyPos.copy(targetPos);
 
-		// Update info panel content
+		// Info panel content
 		const info = router.getBodyInfo(followTarget);
 		if (info) {
 			infoPanel.innerHTML = Object.entries(info)
@@ -287,43 +344,29 @@ function animate(time: number) {
 		// Connector line from body to panel
 		const dx = px - sx;
 		const dy = py - sy;
-		const len = Math.hypot(dx, dy);
-		const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-		connectorLine.style.width = `${len}px`;
+		connectorLine.style.width = `${Math.hypot(dx, dy)}px`;
 		connectorLine.style.left = `${sx}px`;
 		connectorLine.style.top = `${sy}px`;
-		connectorLine.style.transform = `rotate(${ang}deg)`;
-
-		refreshObjectList();
+		connectorLine.style.transform = `rotate(${(Math.atan2(dy, dx) * 180) / Math.PI}deg)`;
 	}
 
 	controls.update();
+
+	// ── Distant-body visibility floor ────────────────
+	// True scale means a planet is sub-pixel from across the system.
+	// Scale meshes up just enough to stay a couple of pixels tall, so
+	// bodies stay visible (and clickable) as dots — like NASA Eyes.
 	const vFov = (camera.fov * Math.PI) / 180;
-	const minScreenPixels = 1; // The minimum size a body will appear on screen
-	const screenHeight = window.innerHeight;
-	// Iterate through the visible bodies
+	const minScreenPixels = 2;
 	for (const body of router.getBodyList()) {
 		const mesh = body.mesh;
 		const dist = camera.position.distanceTo(mesh.position);
-
-		// 1. Calculate how tall the camera's view frustum is at this distance
-		const visibleHeight = 2 * Math.tan(vFov / 2) * dist;
-
-		// 2. Determine how big one screen pixel is in 3D world units at this distance
-		const pixelSizeInWorld = visibleHeight / screenHeight;
-
-		// 3. Calculate the minimum world size needed to satisfy our pixel requirement
-		const minWorldSize = pixelSizeInWorld * minScreenPixels;
-
-		// 4. Get the planet's true radius from its geometry
-		if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-		const trueRadius = mesh.geometry.boundingSphere!.radius;
-		const trueDiameter = trueRadius * 2;
-
-		// 5. Scale the mesh up only if its true physical size drops below our pixel floor
-		const scale = Math.max(1, minWorldSize / trueDiameter);
-		mesh.scale.setScalar(scale);
+		const worldPerPixel =
+			(2 * Math.tan(vFov / 2) * dist) / window.innerHeight;
+		const minDiameter = worldPerPixel * minScreenPixels;
+		mesh.scale.setScalar(Math.max(1, minDiameter / (2 * meshRadius(mesh))));
 	}
+
 	composer.render();
 	requestAnimationFrame(animate);
 }

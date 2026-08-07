@@ -4,46 +4,43 @@ export class Body {
 	mesh: Mesh;
 	name: string;
 	mass: number;
-	/** Physics position in real metres — NOT scaled for rendering. */
+	/** Physics state in real SI (m, m/s, m/s²) — never scaled. */
 	position: Vector3;
 	velocity: Vector3;
-	acceleration: Vector3;
-	/** Multiplier applied only when syncing physics position → mesh. */
-	renderScale = 1;
+	acceleration = new Vector3();
+	/** Metres → render units, applied only when syncing to the mesh. */
+	renderScale: number;
 
 	constructor(
 		mesh: Mesh,
-		mass = 1.0,
-		position = new Vector3(),
-		velocity = new Vector3(),
-		acceleration = new Vector3(),
-		name = "Body",
+		name: string,
+		mass: number,
+		position: Vector3,
+		velocity: Vector3,
+		renderScale = 1,
 	) {
 		this.mesh = mesh;
 		this.name = name;
 		this.mass = mass;
-		this.position = position;
-		this.velocity = velocity;
-		this.acceleration = acceleration;
+		// Clone so re-initialising a sim never sees state mutated by a
+		// previous run of the same constants.
+		this.position = position.clone();
+		this.velocity = velocity.clone();
+		this.renderScale = renderScale;
 	}
 
+	/** Semi-implicit (symplectic) Euler step, then sync the mesh. */
 	update(dt: number) {
-		// v = v + a * Δt   (all in real SI)
 		this.velocity.addScaledVector(this.acceleration, dt);
-		// x = x + v * Δt
 		this.position.addScaledVector(this.velocity, dt);
-
-		// Sync to Three.js mesh in render-space (avoid float32 issues with
-		// huge raw metre values by scaling down before touching the GPU).
-		this.mesh.position
-			.set(
-				this.position.x * this.renderScale,
-				this.position.y * this.renderScale,
-				this.position.z * this.renderScale,
-			);
-
-		// Reset accumulated forces
+		this.syncMesh();
+		// Acceleration is an accumulator — cleared after each step.
 		this.acceleration.set(0, 0, 0);
+	}
+
+	/** Copy the physics position into render space. */
+	syncMesh() {
+		this.mesh.position.copy(this.position).multiplyScalar(this.renderScale);
 	}
 
 	applyForce(force: Vector3) {
@@ -52,7 +49,7 @@ export class Body {
 
 	addToScene(scene: Scene) {
 		scene.add(this.mesh);
-		this.mesh.position.copy(this.position);
-		this.mesh.userData._bodyMesh = true;
+		this.syncMesh();
+		this.mesh.userData.body = this;
 	}
 }

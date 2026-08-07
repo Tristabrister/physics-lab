@@ -1,6 +1,6 @@
 import type * as THREE from "three";
 import type { Body } from "../../engine/Body";
-import { type Controller } from "lil-gui";
+import type { Controller, GUI } from "lil-gui";
 import applyGravity from "../../engine/gravity";
 import { createPanel } from "../../ui/gui";
 import { isPaused, setPaused, onPauseChange } from "../../app/pause";
@@ -13,103 +13,119 @@ import {
 } from "./setup";
 import {
 	G,
-	PLAYBACK_SPEED,
-	MAX_PHYSICS_STEP,
-	SUN_TEMPERATURE,
-	RENDER_SCALE,
+	AU,
 	SECONDS_PER_DAY,
+	MAX_STEP_SECONDS,
+	PLAYBACK_SPEED,
+	SUN_TEMPERATURE,
+	RADIUS_SUN,
+	RADIUS_EARTH,
+	RADIUS_MOON,
+	RADIUS_MARS,
+	SPIN_SUN,
+	SPIN_EARTH,
+	SPIN_MOON,
+	SPIN_MARS,
 } from "./constants";
 
 // ── Module-level state ─────────────────────────────────
 let sun: Body;
 let earth: Body;
-let moon: Body;
-let mars: Body;
 let bodies: Body[];
 let sunMaterial: THREE.ShaderMaterial;
 let sunLight: THREE.PointLight;
+let gui: GUI;
+let unsubscribePause: () => void;
+let elapsedDays = 0;
+
+// Sidereal spin, radians per sim-second
+let spins: { body: Body; rate: number }[] = [];
+
+const RADII_M: Record<string, number> = {
+	Sun: RADIUS_SUN,
+	Earth: RADIUS_EARTH,
+	Moon: RADIUS_MOON,
+	Mars: RADIUS_MARS,
+};
 
 // Per-body min/max heliocentric distance (metres, updated each frame)
 const helioRange = new Map<Body, { min: number; max: number }>();
-
-// ── Diagnostics panel (live-updating readouts) ─────────
-const diag = {
-	// Static — set once
-	lenScale: "",
-	massScale: "",
-	timeScale: "",
-	gReal: "",
-	gScaled: "",
-	visNote: "",
-	// Dynamic — updated each frame (Earth as reference)
-	earthSimDist: "",
-	earthRealDist: "",
-	earthSimSpeed: "",
-	earthRealSpeed: "",
-};
-const diagCtrls: Record<string, Controller> = {};
 
 const settings = {
 	playbackSpeed: PLAYBACK_SPEED,
 	sunTemp: SUN_TEMPERATURE,
 };
 
+// ── Diagnostics panel (live-updating readouts) ─────────
+const diag = {
+	units: "",
+	physics: "",
+	elapsed: "",
+	earthDist: "",
+	earthSpeed: "",
+};
+const diagCtrls: Record<string, Controller> = {};
+
+function applySunColor() {
+	const { r, g, b } = temperatureToColor(settings.sunTemp / 100);
+	sunMaterial.uniforms.uBaseColor.value.set(r / 255, g / 255, b / 255);
+	sunLight.color.setRGB(r / 255, g / 255, b / 255);
+}
+
 // ── Public interface ───────────────────────────────────
 export function init(scene: THREE.Scene) {
 	sun = createSun(scene);
 	earth = createEarth(scene);
-	moon = createMoon(scene);
-	mars = createMars(scene);
+	const moon = createMoon(scene);
+	const mars = createMars(scene);
 	bodies = [sun, earth, moon, mars];
+
+	elapsedDays = 0;
+	helioRange.clear();
 	for (const b of bodies) {
-		if (b !== sun) {
-			const d = b.position.length();
-			helioRange.set(b, { min: d, max: d });
-		}
+		if (b === sun) continue;
+		const d = b.position.length();
+		helioRange.set(b, { min: d, max: d });
 	}
+
+	const TWO_PI = 2 * Math.PI;
+	spins = [
+		{ body: sun, rate: TWO_PI / SPIN_SUN },
+		{ body: earth, rate: TWO_PI / SPIN_EARTH },
+		{ body: moon, rate: TWO_PI / SPIN_MOON },
+		{ body: mars, rate: TWO_PI / SPIN_MARS },
+	];
+
 	sunMaterial = sun.mesh.material as THREE.ShaderMaterial;
 	sunLight = sun.mesh.userData.sunLight as THREE.PointLight;
+	applySunColor();
 
-	const gui = createPanel("Solar System", 380);
-	gui.add(settings, "playbackSpeed", 1, 300, 1).name("Sim speed (days/s)");
-	gui.add(settings, "sunTemp", 2000, 50000, 100).name("Sun Temperature");
+	gui = createPanel("Solar System", 380);
+	gui
+		.add(settings, "playbackSpeed", 0, 365, 0.25)
+		.name("Sim speed (days/s)");
+	gui
+		.add(settings, "sunTemp", 2000, 40000, 100)
+		.name("Sun temperature (K)")
+		.onChange(applySunColor);
 
 	// ── Pause / play toggle (synced with the global P key) ──
 	const pauseState = { paused: isPaused() };
 	const pauseCtrl = gui.add(pauseState, "paused").name("Paused");
 	pauseCtrl.onChange((v: boolean) => setPaused(v));
-	onPauseChange((p) => {
+	unsubscribePause = onPauseChange((p) => {
 		pauseState.paused = p;
 		pauseCtrl.updateDisplay();
 	});
 
 	// ── Diagnostics folder ──────────────────────────
-	const dg = gui.addFolder("🔧 Scale Diagnostics");
+	const dg = gui.addFolder("🔧 Diagnostics");
 	dg.domElement.classList.add("diag-folder");
-	diag.lenScale = `1 sim-unit = ${(LENGTH_SCALE / 1000).toExponential(1)} km`;
-	diag.massScale = `1 sim-unit = ${MASS_SCALE.toExponential(1)} kg`;
-	diag.timeScale = `1 sim-unit = 1 day  (${TIME_SCALE} s)`;
-	diag.gReal = `G real = 6.6743e-11 m³/(kg·s²)`;
-	diag.gScaled = `G scaled = ${scaledG.toExponential(4)} su³/(su·su²)`;
-	diag.visNote = "⚠ body mesh radii ~250× true scale for visibility";
-
-	const staticKeys: (keyof typeof diag)[] = [
-		"lenScale",
-		"massScale",
-		"timeScale",
-		"gReal",
-		"gScaled",
-		"visNote",
-	];
-	for (const k of staticKeys) {
+	diag.units = `1 render unit = 1 AU = ${(AU / 1000).toExponential(3)} km — true scale`;
+	diag.physics = `Real SI · semi-implicit Euler · substep ≤ ${MAX_STEP_SECONDS / 3600} h`;
+	for (const k of Object.keys(diag) as (keyof typeof diag)[]) {
 		diagCtrls[k] = dg.add(diag, k).disable();
 	}
-
-	// Earth reference (live)
-	diagCtrls["earthRealDist"] = dg.add(diag, "earthRealDist").disable();
-	diagCtrls["earthSimDist"] = dg.add(diag, "earthSimDist").disable();
-	diagCtrls["earthRealSpeed"] = dg.add(diag, "earthRealSpeed").disable();
-	diagCtrls["earthSimSpeed"] = dg.add(diag, "earthSimSpeed").disable();
 	dg.close();
 }
 
@@ -117,85 +133,65 @@ export function update(dt: number) {
 	// Animate the procedural solar surface (real-time, not sim-time)
 	sunMaterial.uniforms.uTime.value += dt;
 
-	// Live-update base colour from the temperature slider
-	const { r, g, b } = temperatureToColor(settings.sunTemp / 100);
-	sunMaterial.uniforms.uBaseColor.value.set(r / 255, g / 255, b / 255);
-	sunLight.color.setRGB(r / 255, g / 255, b / 255);
-
 	const simSeconds = dt * settings.playbackSpeed * SECONDS_PER_DAY;
-	const nSteps = Math.max(1, Math.ceil(simSeconds / MAX_PHYSICS_STEP));
-	const step = simSeconds / nSteps;
-	for (let i = 0; i < nSteps; i++) {
-		applyGravity(bodies, step, G);
+	if (simSeconds > 0) {
+		const nSteps = Math.ceil(simSeconds / MAX_STEP_SECONDS);
+		const step = simSeconds / nSteps;
+		for (let i = 0; i < nSteps; i++) {
+			applyGravity(bodies, step, G);
+		}
+		elapsedDays += simSeconds / SECONDS_PER_DAY;
+
+		for (const { body, rate } of spins) {
+			body.mesh.rotation.y += rate * simSeconds;
+		}
+
+		// Track min/max heliocentric distance per body
+		for (const b of bodies) {
+			if (b === sun) continue;
+			const d = b.position.length();
+			const range = helioRange.get(b)!;
+			if (d < range.min) range.min = d;
+			if (d > range.max) range.max = d;
+		}
 	}
 
-	// Track min/max heliocentric distance per body
-	for (const b of bodies) {
-		if (b === sun) continue;
-		const d = b.position.length();
-		const range = helioRange.get(b)!;
-		if (d < range.min) range.min = d;
-		if (d > range.max) range.max = d;
-	}
-
-	// Refresh Earth diagnostics
+	// Live Earth diagnostics (sanity anchors: ~1 AU, ~30 km/s)
 	const ed = earth.position.length();
 	const ev = earth.velocity.length();
-	diag.earthSimDist = `Sim distance  = ${ed.toFixed(4)} su`;
-	diag.earthRealDist = `Real distance = ${((ed * LENGTH_SCALE) / 1000).toExponential(4)} km`;
-	diag.earthSimSpeed = `Sim speed  = ${ev.toExponential(4)} su/day`;
-	diag.earthRealSpeed = `Real speed = ${((ev * LENGTH_SCALE) / TIME_SCALE / 1000).toFixed(3)} km/s`;
-	for (const k of [
-		"earthSimDist",
-		"earthRealDist",
-		"earthSimSpeed",
-		"earthRealSpeed",
-	]) {
+	diag.elapsed = `Elapsed: ${elapsedDays.toFixed(1)} sim-days`;
+	diag.earthDist = `Earth–Sun: ${(ed / AU).toFixed(4)} AU  (${(ed / 1000).toExponential(4)} km)`;
+	diag.earthSpeed = `Earth speed: ${(ev / 1000).toFixed(2)} km/s`;
+	for (const k of ["elapsed", "earthDist", "earthSpeed"]) {
 		diagCtrls[k]?.updateDisplay();
 	}
-
-	// Display-only: the Moon's true orbit (0.0384 u) sits inside Earth's
-	// mesh (0.22 u) at system scale.  Gently nudge the displayed offset
-	// just enough so the Moon visibly circles outside Earth.  Physics is
-	// untouched — moon.position stays at true scale.
-	// const MOON_DISPLAY_SCALE = 12;
-	// moon.mesh.position
-	// 	.copy(earth.position)
-	// 	.add(
-	// 		moon.position
-	// 			.clone()
-	// 			.sub(earth.position)
-	// 			.multiplyScalar(MOON_DISPLAY_SCALE),
-	// 	);
 }
 
 export function destroy(scene: THREE.Scene) {
+	// The sun's light is a child of its mesh, so this removes it too.
 	for (const b of bodies) scene.remove(b.mesh);
+	gui.destroy();
+	unsubscribePause();
 }
 
 export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 	const b = bodies.find((b) => b.mesh === mesh);
 	if (!b) return null;
 
-	const speedMps = b.velocity.length(); // m/s
-	const distM = b.position.length(); // m
-	const massKg = b.mass; // kg
-
 	const info: Record<string, string> = { Name: b.name };
+	info.Mass = b.mass.toExponential(3) + " kg";
+	const radius = RADII_M[b.name];
+	if (radius) info.Radius = `${(radius / 1000).toLocaleString()} km`;
 
 	if (b === sun) {
 		info.Temperature = `${settings.sunTemp} K`;
-		info.Mass = massKg.toExponential(3) + " kg";
-		info.Radius = "6.96 × 10⁸ m";
 	} else {
-		info.Mass = massKg.toExponential(3) + " kg";
-		info["Orbital speed"] = `${(speedMps / 1000).toFixed(1)} km/s`;
-		info["Heliocentric dist"] = `${(distM / 1000).toExponential(3)} km`;
+		info["Orbital speed"] = `${(b.velocity.length() / 1000).toFixed(1)} km/s`;
+		info["Heliocentric dist"] = `${(b.position.length() / AU).toFixed(4)} AU`;
 		const range = helioRange.get(b);
 		if (range) {
-			info["Heliocentric range"] =
-				`${(range.min / 1000).toExponential(3)} – ` +
-				`${(range.max / 1000).toExponential(3)} km`;
+			info["Observed range"] =
+				`${(range.min / AU).toFixed(4)} – ${(range.max / AU).toFixed(4)} AU`;
 		}
 	}
 
