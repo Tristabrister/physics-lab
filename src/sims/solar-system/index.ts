@@ -10,13 +10,12 @@ import {
 	temperatureToColor,
 } from "./setup";
 import {
-	scaledG,
+	G,
 	PLAYBACK_SPEED,
 	MAX_PHYSICS_STEP,
 	SUN_TEMPERATURE,
-	LENGTH_SCALE,
-	MASS_SCALE,
-	TIME_SCALE,
+	RENDER_SCALE,
+	SECONDS_PER_DAY,
 } from "./constants";
 
 // ── Module-level state ─────────────────────────────────
@@ -28,7 +27,7 @@ let bodies: Body[];
 let sunMaterial: THREE.ShaderMaterial;
 let sunLight: THREE.PointLight;
 
-// Per-body min/max heliocentric distance (scaled units, updated each frame)
+// Per-body min/max heliocentric distance (metres, updated each frame)
 const helioRange = new Map<Body, { min: number; max: number }>();
 
 const settings = {
@@ -53,7 +52,7 @@ export function init(scene: THREE.Scene) {
 	sunLight = sun.mesh.userData.sunLight as THREE.PointLight;
 
 	const gui = createPanel("Solar System");
-	gui.add(settings, "playbackSpeed", 1, 300, 1).name("Sim speed (days/s)");
+	gui.add(settings, "playbackSpeed", 0.1, 60, 0.1).name("Sim speed (days/s)");
 	gui.add(settings, "sunTemp", 2000, 50000, 100).name("Sun Temperature");
 }
 
@@ -66,11 +65,11 @@ export function update(dt: number) {
 	sunMaterial.uniforms.uBaseColor.value.set(r / 255, g / 255, b / 255);
 	sunLight.color.setRGB(r / 255, g / 255, b / 255);
 
-	const dtTotal = dt * settings.playbackSpeed;
-	const nSteps = Math.max(1, Math.ceil(dtTotal / MAX_PHYSICS_STEP));
-	const step = dtTotal / nSteps;
+	const simSeconds = dt * settings.playbackSpeed * SECONDS_PER_DAY;
+	const nSteps = Math.max(1, Math.ceil(simSeconds / MAX_PHYSICS_STEP));
+	const step = simSeconds / nSteps;
 	for (let i = 0; i < nSteps; i++) {
-		applyGravity(bodies, step, scaledG);
+		applyGravity(bodies, step, G);
 	}
 
 	// Track min/max heliocentric distance per body
@@ -82,19 +81,17 @@ export function update(dt: number) {
 		if (d > range.max) range.max = d;
 	}
 
-	// Display-only: the Moon's true orbit (0.0384 u) sits inside Earth's
-	// mesh (0.22 u) at system scale.  Gently nudge the displayed offset
-	// just enough so the Moon visibly circles outside Earth.  Physics is
-	// untouched — moon.position stays at true scale.
-	const MOON_DISPLAY_SCALE = 12;
-	moon.mesh.position
-		.copy(earth.position)
-		.add(
-			moon.position
-				.clone()
-				.sub(earth.position)
-				.multiplyScalar(MOON_DISPLAY_SCALE),
-		);
+	// // Display-only: the true Moon–Earth offset (3.6e8 m → 0.036 render-u)
+	// // is a fraction of Earth's mesh radius (0.16).  Without scaling the Moon
+	// // is invisible inside Earth.  We scale up the offset so it visibly orbits.
+	// // Real separation is ~60 Earth radii, but rendering that far would make
+	// // the Moon hard to find; 35× (~8 Earth radii) is a workable compromise.
+	// // Physics is untouched — moon.position stays at true scale.
+	// const MOON_DISPLAY_SCALE = 35;
+	// const moonOffset = moon.position.clone().sub(earth.position);
+	// moon.mesh.position
+	// 	.copy(earth.mesh.position)
+	// 	.add(moonOffset.multiplyScalar(RENDER_SCALE * MOON_DISPLAY_SCALE));
 }
 
 export function destroy(scene: THREE.Scene) {
@@ -105,9 +102,9 @@ export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 	const b = bodies.find((b) => b.mesh === mesh);
 	if (!b) return null;
 
-	const speedMps = b.velocity.length() * (LENGTH_SCALE / TIME_SCALE);
-	const distM = b.position.length() * LENGTH_SCALE;
-	const massKg = b.mass * MASS_SCALE;
+	const speedMps = b.velocity.length(); // m/s
+	const distM = b.position.length(); // m
+	const massKg = b.mass; // kg
 
 	const info: Record<string, string> = { Name: b.name };
 
@@ -122,8 +119,8 @@ export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 		const range = helioRange.get(b);
 		if (range) {
 			info["Heliocentric range"] =
-				`${((range.min * LENGTH_SCALE) / 1000).toExponential(3)} – ` +
-				`${((range.max * LENGTH_SCALE) / 1000).toExponential(3)} km`;
+				`${(range.min / 1000).toExponential(3)} – ` +
+				`${(range.max / 1000).toExponential(3)} km`;
 		}
 	}
 

@@ -31,8 +31,8 @@ composer.addPass(new RenderPass(scene, camera));
 
 const bloomPass = new UnrealBloomPass(
 	new THREE.Vector2(window.innerWidth, window.innerHeight),
-	1, // strength  — glow intensity   (tweak me)
-	1, // radius   — glow spread        (tweak me)
+	1.5, // strength  — glow intensity (compensates smaller Sun geo)
+	1.5, // radius   — glow spread
 	0.7, // threshold — only bright pixels bloom
 );
 composer.addPass(bloomPass);

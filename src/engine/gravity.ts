@@ -11,10 +11,10 @@ export default function applyGravity(bodies: Body[], dt: number, G: number) {
 				bodies[j].position,
 				bodies[i].position,
 			);
-			// Softening floor to avoid division blowups when bodies nearly coincide.
-			// Must stay well below the smallest physical separation in the sim
-			// (Earth-Moon = 0.0384 units -> distanceSq ≈ 0.00148).
-			const distanceSq = Math.max(direction.lengthSq(), 1e-6);
+			// Softening floor — prevents division blow-up when bodies
+			// nearly coincide.  1e6 = (1 km)², far below any orbital
+			// separation (Earth–Moon ≈ 1.3e17 m²).
+			const distanceSq = Math.max(direction.lengthSq(), 1e6);
 			const gravityForce = (G * bodies[i].mass * bodies[j].mass) / distanceSq;
 			accelerations[i].addScaledVector(
 				direction.normalize(),

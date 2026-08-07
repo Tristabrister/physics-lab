@@ -4,9 +4,12 @@ export class Body {
 	mesh: Mesh;
 	name: string;
 	mass: number;
+	/** Physics position in real metres — NOT scaled for rendering. */
 	position: Vector3;
 	velocity: Vector3;
 	acceleration: Vector3;
+	/** Multiplier applied only when syncing physics position → mesh. */
+	renderScale = 1;
 
 	constructor(
 		mesh: Mesh,
@@ -25,11 +28,20 @@ export class Body {
 	}
 
 	update(dt: number) {
-		// v = v + a * Δt
+		// v = v + a * Δt   (all in real SI)
 		this.velocity.addScaledVector(this.acceleration, dt);
 		// x = x + v * Δt
 		this.position.addScaledVector(this.velocity, dt);
-		this.mesh.position.copy(this.position);
+
+		// Sync to Three.js mesh in render-space (avoid float32 issues with
+		// huge raw metre values by scaling down before touching the GPU).
+		this.mesh.position
+			.set(
+				this.position.x * this.renderScale,
+				this.position.y * this.renderScale,
+				this.position.z * this.renderScale,
+			);
+
 		// Reset accumulated forces
 		this.acceleration.set(0, 0, 0);
 	}
