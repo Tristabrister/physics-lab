@@ -9,12 +9,12 @@ export function createScene() {
 
 export function createCamera() {
 	const camera = new THREE.PerspectiveCamera(
-		75,
+		2,
 		window.innerWidth / window.innerHeight,
 		0.001,
 		500,
 	);
-	camera.position.set(0, 20, 20);
+	camera.position.set(0, 1, 1);
 	return camera;
 }
 
@@ -42,7 +42,8 @@ export function createControls(
 }
 
 export function createLighting(scene: THREE.Scene) {
-	const ambient = new THREE.AmbientLight(0x1a1a40, 0.25);
+	// Subtle fill so the dark side of bodies is visible (like NASA Eyes)
+	const ambient = new THREE.AmbientLight(0x304870, 0.55);
 	scene.add(ambient);
 	return ambient;
 }

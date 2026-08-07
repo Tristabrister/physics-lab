@@ -32,9 +32,9 @@ composer.addPass(new RenderPass(scene, camera));
 
 const bloomPass = new UnrealBloomPass(
 	new THREE.Vector2(window.innerWidth, window.innerHeight),
-	1, // strength  — glow intensity   (tweak me)
-	1, // radius   — glow spread        (tweak me)
-	0.7, // threshold — only bright pixels bloom
+	0.5, // strength  — soft sun glow
+	0.8, // radius    — natural corona spread
+	0.55, // threshold — sun emissive (0.66–0.94 lum) blooms fully; planets (≤0.5) don't
 );
 composer.addPass(bloomPass);
 
@@ -171,7 +171,7 @@ function clearFollow() {
 /** Pull the camera to a comfortable viewing distance from a followed body. */
 function zoomToBody(body: THREE.Mesh) {
 	const radius = body.geometry.boundingSphere?.radius ?? 1;
-	const targetDist = radius * 8;
+	const targetDist = radius * 100;
 
 	// Use the current camera→body direction, or default to a 45° overhead view
 	const dir = new THREE.Vector3()
@@ -298,6 +298,32 @@ function animate(time: number) {
 	}
 
 	controls.update();
+	const vFov = (camera.fov * Math.PI) / 180;
+	const minScreenPixels = 1; // The minimum size a body will appear on screen
+	const screenHeight = window.innerHeight;
+	// Iterate through the visible bodies
+	for (const body of router.getBodyList()) {
+		const mesh = body.mesh;
+		const dist = camera.position.distanceTo(mesh.position);
+
+		// 1. Calculate how tall the camera's view frustum is at this distance
+		const visibleHeight = 2 * Math.tan(vFov / 2) * dist;
+
+		// 2. Determine how big one screen pixel is in 3D world units at this distance
+		const pixelSizeInWorld = visibleHeight / screenHeight;
+
+		// 3. Calculate the minimum world size needed to satisfy our pixel requirement
+		const minWorldSize = pixelSizeInWorld * minScreenPixels;
+
+		// 4. Get the planet's true radius from its geometry
+		if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+		const trueRadius = mesh.geometry.boundingSphere!.radius;
+		const trueDiameter = trueRadius * 2;
+
+		// 5. Scale the mesh up only if its true physical size drops below our pixel floor
+		const scale = Math.max(1, minWorldSize / trueDiameter);
+		mesh.scale.setScalar(scale);
+	}
 	composer.render();
 	requestAnimationFrame(animate);
 }

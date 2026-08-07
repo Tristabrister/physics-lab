@@ -14,14 +14,19 @@ export const DIST_EARTH_MOON = 3.626e8; //   m
 export const DIST_MARS_SUN = 2.067e11; // m
 
 // ── Scaling (1 time-unit = 1 day) ─────────────────────
-export const LENGTH_SCALE = 1e10;
-export const MASS_SCALE = 1e21;
+export const LENGTH_SCALE = 1.496e11; // 1 Astronomical Unit (AU)
+export const MASS_SCALE = 1.989e30; //1 Solar Mass
 export const TIME_SCALE = 86400; // seconds per day
 
 // ── Semi-major Axes ─────────────────────
 export const marssemimajor = 2.279e11 / LENGTH_SCALE; // m
 export const earthsemimajor = 1.496e11 / LENGTH_SCALE; // m
 export const moonSemiMajor = 3.84399e8 / LENGTH_SCALE; // m
+
+export const RADIUS_SUN = 6.957e8 / LENGTH_SCALE; // m
+export const RADIUS_EARTH = 6.371e6 / LENGTH_SCALE; // m
+export const RADIUS_MOON = 1.737e6 / LENGTH_SCALE; // m
+export const RADIUS_MARS = 3.389e6 / LENGTH_SCALE; // m
 
 export const scaledG =
 	(G * TIME_SCALE * TIME_SCALE * MASS_SCALE) /
@@ -70,5 +75,5 @@ export const MARS_VELOCITY = new THREE.Vector3(0, 0, marsSpeed);
 export const MARS_ACCELERATION = new THREE.Vector3(0, 0, 0);
 
 // ── Simulation knobs ───────────────────────────────────
-export const PLAYBACK_SPEED = 10; // sim-days per real second
+export const PLAYBACK_SPEED = 1; // sim-days per real second
 export const MAX_PHYSICS_STEP = 0.25; // max sim-days per substep
