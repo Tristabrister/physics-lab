@@ -56,6 +56,28 @@ const settings = {
 	sunTemp: SUN_TEMPERATURE,
 };
 
+// Sim speed is set via a log-scale slider — linear sliders can't cover
+// both "watch Earth spin" (needs ~0.02 days/s) and "watch Earth orbit"
+// (needs ~50+ days/s) usefully in one range.
+const speedControl = { logSpeed: Math.log10(PLAYBACK_SPEED) };
+const SPEED_LOG_MIN = -2; // 0.01 days/s — a full Earth day takes 100s
+const SPEED_LOG_MAX = 2.3; // ~200 days/s — Mars' year in ~3.4s
+let speedReadoutCtrl: Controller;
+
+function formatSpeed(daysPerSec: number) {
+	const unit = daysPerSec < 1 ? "day" : "days";
+	return `${daysPerSec < 0.1 ? daysPerSec.toFixed(3) : daysPerSec < 10 ? daysPerSec.toFixed(2) : daysPerSec.toFixed(0)} ${unit}/s`;
+}
+
+function onSpeedChange(logValue: number) {
+	settings.playbackSpeed = Math.pow(10, logValue);
+	if (speedReadoutCtrl) {
+		(speedReadoutCtrl.object as { display: string }).display =
+			formatSpeed(settings.playbackSpeed);
+		speedReadoutCtrl.updateDisplay();
+	}
+}
+
 // ── Diagnostics panel (live-updating readouts) ─────────
 const diag = {
 	units: "",
@@ -102,8 +124,12 @@ export function init(scene: THREE.Scene) {
 
 	gui = createPanel("Solar System", 380);
 	gui
-		.add(settings, "playbackSpeed", 0, 365, 0.25)
-		.name("Sim speed (days/s)");
+		.add(speedControl, "logSpeed", SPEED_LOG_MIN, SPEED_LOG_MAX, 0.01)
+		.name("Sim speed")
+		.onChange(onSpeedChange);
+	const speedReadout = { display: "" };
+	speedReadoutCtrl = gui.add(speedReadout, "display").name("→").disable();
+	onSpeedChange(speedControl.logSpeed); // initialise readout + settings
 	gui
 		.add(settings, "sunTemp", 2000, 40000, 100)
 		.name("Sun temperature (K)")

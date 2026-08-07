@@ -255,6 +255,7 @@ let lastTime = 0;
 function animate(time: number) {
 	const frameSeconds = Math.min((time - lastTime) / 1000, 0.1);
 	lastTime = time;
+	const vFov = THREE.MathUtils.degToRad(camera.fov);
 
 	// WASD — fly the camera through space (position + orbit target move
 	// together; mouse drag still orbits). Speed scales with the distance
@@ -301,7 +302,7 @@ function animate(time: number) {
 
 	refreshObjectList();
 
-	// ── Follow + fly-to ──────────────────────────────
+	// ── Follow + fly-to: reposition the camera ───────
 	if (followTarget) {
 		const targetPos = followTarget.position;
 
@@ -323,8 +324,23 @@ function animate(time: number) {
 		}
 		controls.target.copy(targetPos);
 		lastBodyPos.copy(targetPos);
+	}
 
-		// Info panel content
+	controls.update();
+
+	// OrbitControls only touches camera.position/quaternion — matrixWorld
+	// (and matrixWorldInverse, which .project() reads) isn't refreshed
+	// until the renderer's next pass. Force it now so the label below is
+	// projected through *this* frame's camera, not last frame's. Skipping
+	// this makes the label lag behind the body by one frame's motion —
+	// invisible at low sim speed, increasingly visible as speed (and thus
+	// per-frame camera movement while following) goes up.
+	camera.updateMatrixWorld();
+
+	// ── Info panel + connector line ──────────────────
+	if (followTarget) {
+		const targetPos = followTarget.position;
+
 		const info = router.getBodyInfo(followTarget);
 		if (info) {
 			infoPanel.innerHTML = Object.entries(info)
@@ -332,31 +348,50 @@ function animate(time: number) {
 				.join("");
 		}
 
-		// Pin panel near the body on screen
+		// Body's on-screen radius (px), so the panel is offset far enough
+		// to clear its silhouette instead of sitting on top of it.
+		const dist = camera.position.distanceTo(targetPos);
+		const worldPerPixel = (2 * Math.tan(vFov / 2) * dist) / window.innerHeight;
+		const bodyRadiusPx =
+			(meshRadius(followTarget) * followTarget.scale.x) / worldPerPixel;
+
 		const screenPos = targetPos.clone().project(camera);
 		const sx = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
 		const sy = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
-		const px = sx + 28;
-		const py = sy - 48;
+
+		// Anchor up-right of the body, clear of its silhouette.
+		const margin = 16;
+		const dirX = Math.SQRT1_2;
+		const dirY = -Math.SQRT1_2;
+		let px = sx + dirX * (bodyRadiusPx + margin);
+		let py = sy + dirY * (bodyRadiusPx + margin);
+
+		// Clamp fully on-screen. CSS anchors the panel's bottom-left
+		// corner at (left, top) and grows up-right from there.
+		const panelW = infoPanel.offsetWidth || 160;
+		const panelH = infoPanel.offsetHeight || 90;
+		px = THREE.MathUtils.clamp(px, margin, window.innerWidth - panelW - margin);
+		py = THREE.MathUtils.clamp(py, panelH + margin, window.innerHeight - margin);
+
 		infoPanel.style.left = `${px}px`;
 		infoPanel.style.top = `${py}px`;
 
-		// Connector line from body to panel
-		const dx = px - sx;
-		const dy = py - sy;
+		// Connector line starts at the body's edge, not its centre, so it
+		// never draws across the body itself.
+		const lsx = sx + dirX * bodyRadiusPx;
+		const lsy = sy + dirY * bodyRadiusPx;
+		const dx = px - lsx;
+		const dy = py - lsy;
 		connectorLine.style.width = `${Math.hypot(dx, dy)}px`;
-		connectorLine.style.left = `${sx}px`;
-		connectorLine.style.top = `${sy}px`;
+		connectorLine.style.left = `${lsx}px`;
+		connectorLine.style.top = `${lsy}px`;
 		connectorLine.style.transform = `rotate(${(Math.atan2(dy, dx) * 180) / Math.PI}deg)`;
 	}
-
-	controls.update();
 
 	// ── Distant-body visibility floor ────────────────
 	// True scale means a planet is sub-pixel from across the system.
 	// Scale meshes up just enough to stay a couple of pixels tall, so
 	// bodies stay visible (and clickable) as dots — like NASA Eyes.
-	const vFov = (camera.fov * Math.PI) / 180;
 	const minScreenPixels = 2;
 	for (const body of router.getBodyList()) {
 		const mesh = body.mesh;
