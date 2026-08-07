@@ -1,7 +1,9 @@
 import type * as THREE from "three";
 import type { Body } from "../../engine/Body";
+import { type Controller } from "lil-gui";
 import applyGravity from "../../engine/gravity";
 import { createPanel } from "../../ui/gui";
+import { isPaused, setPaused, onPauseChange } from "../../app/pause";
 import {
 	createSun,
 	createEarth,
@@ -31,6 +33,23 @@ let sunLight: THREE.PointLight;
 // Per-body min/max heliocentric distance (scaled units, updated each frame)
 const helioRange = new Map<Body, { min: number; max: number }>();
 
+// ── Diagnostics panel (live-updating readouts) ─────────
+const diag = {
+	// Static — set once
+	lenScale: "",
+	massScale: "",
+	timeScale: "",
+	gReal: "",
+	gScaled: "",
+	visNote: "",
+	// Dynamic — updated each frame (Earth as reference)
+	earthSimDist: "",
+	earthRealDist: "",
+	earthSimSpeed: "",
+	earthRealSpeed: "",
+};
+const diagCtrls: Record<string, Controller> = {};
+
 const settings = {
 	playbackSpeed: PLAYBACK_SPEED,
 	sunTemp: SUN_TEMPERATURE,
@@ -52,9 +71,47 @@ export function init(scene: THREE.Scene) {
 	sunMaterial = sun.mesh.material as THREE.ShaderMaterial;
 	sunLight = sun.mesh.userData.sunLight as THREE.PointLight;
 
-	const gui = createPanel("Solar System");
+	const gui = createPanel("Solar System", 380);
 	gui.add(settings, "playbackSpeed", 1, 300, 1).name("Sim speed (days/s)");
 	gui.add(settings, "sunTemp", 2000, 50000, 100).name("Sun Temperature");
+
+	// ── Pause / play toggle (synced with the global P key) ──
+	const pauseState = { paused: isPaused() };
+	const pauseCtrl = gui.add(pauseState, "paused").name("Paused");
+	pauseCtrl.onChange((v: boolean) => setPaused(v));
+	onPauseChange((p) => {
+		pauseState.paused = p;
+		pauseCtrl.updateDisplay();
+	});
+
+	// ── Diagnostics folder ──────────────────────────
+	const dg = gui.addFolder("🔧 Scale Diagnostics");
+	dg.domElement.classList.add("diag-folder");
+	diag.lenScale = `1 sim-unit = ${(LENGTH_SCALE / 1000).toExponential(1)} km`;
+	diag.massScale = `1 sim-unit = ${MASS_SCALE.toExponential(1)} kg`;
+	diag.timeScale = `1 sim-unit = 1 day  (${TIME_SCALE} s)`;
+	diag.gReal = `G real = 6.6743e-11 m³/(kg·s²)`;
+	diag.gScaled = `G scaled = ${scaledG.toExponential(4)} su³/(su·su²)`;
+	diag.visNote = "⚠ body mesh radii ~250× true scale for visibility";
+
+	const staticKeys: (keyof typeof diag)[] = [
+		"lenScale",
+		"massScale",
+		"timeScale",
+		"gReal",
+		"gScaled",
+		"visNote",
+	];
+	for (const k of staticKeys) {
+		diagCtrls[k] = dg.add(diag, k).disable();
+	}
+
+	// Earth reference (live)
+	diagCtrls["earthRealDist"] = dg.add(diag, "earthRealDist").disable();
+	diagCtrls["earthSimDist"] = dg.add(diag, "earthSimDist").disable();
+	diagCtrls["earthRealSpeed"] = dg.add(diag, "earthRealSpeed").disable();
+	diagCtrls["earthSimSpeed"] = dg.add(diag, "earthSimSpeed").disable();
+	dg.close();
 }
 
 export function update(dt: number) {
@@ -82,19 +139,35 @@ export function update(dt: number) {
 		if (d > range.max) range.max = d;
 	}
 
+	// Refresh Earth diagnostics
+	const ed = earth.position.length();
+	const ev = earth.velocity.length();
+	diag.earthSimDist = `Sim distance  = ${ed.toFixed(4)} su`;
+	diag.earthRealDist = `Real distance = ${((ed * LENGTH_SCALE) / 1000).toExponential(4)} km`;
+	diag.earthSimSpeed = `Sim speed  = ${ev.toExponential(4)} su/day`;
+	diag.earthRealSpeed = `Real speed = ${((ev * LENGTH_SCALE) / TIME_SCALE / 1000).toFixed(3)} km/s`;
+	for (const k of [
+		"earthSimDist",
+		"earthRealDist",
+		"earthSimSpeed",
+		"earthRealSpeed",
+	]) {
+		diagCtrls[k]?.updateDisplay();
+	}
+
 	// Display-only: the Moon's true orbit (0.0384 u) sits inside Earth's
 	// mesh (0.22 u) at system scale.  Gently nudge the displayed offset
 	// just enough so the Moon visibly circles outside Earth.  Physics is
 	// untouched — moon.position stays at true scale.
-	const MOON_DISPLAY_SCALE = 12;
-	moon.mesh.position
-		.copy(earth.position)
-		.add(
-			moon.position
-				.clone()
-				.sub(earth.position)
-				.multiplyScalar(MOON_DISPLAY_SCALE),
-		);
+	// const MOON_DISPLAY_SCALE = 12;
+	// moon.mesh.position
+	// 	.copy(earth.position)
+	// 	.add(
+	// 		moon.position
+	// 			.clone()
+	// 			.sub(earth.position)
+	// 			.multiplyScalar(MOON_DISPLAY_SCALE),
+	// 	);
 }
 
 export function destroy(scene: THREE.Scene) {

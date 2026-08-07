@@ -187,6 +187,39 @@ canvas {
 	accent-color: #7c8cf8;
 }
 
+/* ── Diagnostics readouts — readable, no truncation ──── */
+.lil-gui .diag-folder {
+	--widget-color: #555741;
+}
+.lil-gui .diag-folder .controller {
+	height: auto;
+	min-height: 26px;
+	padding: 3px 0;
+	align-items: center;
+}
+.lil-gui .diag-folder .controller.disabled .name {
+	color: #c6d0e0 !important;
+	font-size: 11px;
+	font-weight: 500;
+	white-space: normal;
+}
+.lil-gui .diag-folder .controller.disabled .slider,
+.lil-gui .diag-folder .controller.disabled .widget {
+	overflow: visible;
+	white-space: normal;
+	word-break: break-word;
+	height: auto;
+	min-height: 20px;
+	background: #1a2433 !important;
+	border: 1px solid rgba(22, 97, 43, 0.18);
+	border-radius: 6px;
+	padding: 3px 8px;
+	color: #a5f3b8 !important;
+	font-size: 12.5px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
 /* ── HUD ──────────────────────────────────────────────── */
 #hud-keys {
 	position: fixed;
@@ -213,6 +246,26 @@ canvas {
 #hud-keys span {
 	color: rgba(255, 255, 255, 0.35);
 	font-size: 11px;
+}
+
+/* ── Pause badge ─────────────────────────────────────── */
+#pause-badge {
+	position: fixed;
+	top: 18px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	pointer-events: none;
+	background: rgba(255, 170, 60, 0.16);
+	border: 1px solid rgba(255, 170, 60, 0.45);
+	color: #ffd28a;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	padding: 5px 16px;
+	border-radius: 999px;
+	backdrop-filter: blur(6px);
+	text-transform: uppercase;
 }
 
 /* ── Info panel (click-to-follow popup) ──────────────── */

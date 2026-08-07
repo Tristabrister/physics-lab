@@ -12,7 +12,8 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { Router } from "./app/router";
 import { createSidebar } from "./app/sidebar";
-import { createHUD } from "./ui/hud";
+import { isPaused, togglePaused, onPauseChange } from "./app/pause";
+import { createHUD, createPauseBadge } from "./ui/hud";
 import "./style.css";
 
 // ── Shared renderer (persists across sims) ─────────────
@@ -61,6 +62,7 @@ window.addEventListener("keydown", (e) => {
 			"a",
 			"s",
 			"d",
+			"p",
 			" ",
 			"control",
 			"arrowup",
@@ -75,6 +77,14 @@ window.addEventListener("keydown", (e) => {
 });
 window.addEventListener("keyup", (e) => {
 	keys[e.key.toLowerCase()] = false;
+});
+
+// ── Pause / play ──────────────────────────────────────
+window.addEventListener("keydown", (e) => {
+	if (e.key.toLowerCase() === "p" && !e.repeat) {
+		e.preventDefault();
+		togglePaused();
+	}
 });
 
 // ── Prevent accidental text selection on Ctrl‑click ────
@@ -95,6 +105,10 @@ controls.mouseButtons = {
 
 // ── HUD ────────────────────────────────────────────────
 createHUD(app);
+const pauseBadge = createPauseBadge(app);
+onPauseChange((p) => {
+	pauseBadge.style.display = p ? "block" : "none";
+});
 
 // ── Click-to-follow + info panel ───────────────────────
 const raycaster = new THREE.Raycaster();
@@ -237,8 +251,10 @@ function animate(time: number) {
 		camera.position.add(move);
 	}
 
-	// Update current sim
-	router.update(frameSeconds);
+	// Update current sim (skipped while paused)
+	if (!isPaused()) {
+		router.update(frameSeconds);
+	}
 
 	// Refresh object list (cheap DOM check, runs once per frame)
 	refreshObjectList();

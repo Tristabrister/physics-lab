@@ -17,7 +17,20 @@ export function createHUD(parent: HTMLElement) {
 		"<span>drag orbit</span>",
 		"<span>·</span>",
 		"<span>click body to follow</span>",
+		"<span>·</span>",
+		"<kbd>P</kbd>",
+		"<span>pause</span>",
 	].join(" ");
 	parent.appendChild(hud);
 	return hud;
+}
+
+/** "⏸ Paused" badge shown while the simulation is paused. */
+export function createPauseBadge(parent: HTMLElement) {
+	const badge = document.createElement("div");
+	badge.id = "pause-badge";
+	badge.textContent = "⏸ Paused";
+	badge.style.display = "none";
+	parent.appendChild(badge);
+	return badge;
 }
