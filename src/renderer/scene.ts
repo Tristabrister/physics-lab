@@ -11,8 +11,8 @@ export function createCamera() {
 	const camera = new THREE.PerspectiveCamera(
 		2,
 		window.innerWidth / window.innerHeight,
-		0.001,
-		500,
+		1e-6,  // Drastically lowered from 0.001 to prevent clipping tiny meshes
+		1000   // Increased far plane just in case
 	);
 	camera.position.set(0, 1, 1);
 	return camera;

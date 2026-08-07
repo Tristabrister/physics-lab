@@ -4,10 +4,10 @@ import earthDayMap from "../../assets/8k_earth_daymap.jpg";
 import moonMap from "../../assets/8k_moon.jpg";
 import marsMap from "../../assets/8k_mars.jpg";
 import {
-	scaledMassSun,
-	scaledMassEarth,
-	scaledMassMoon,
-	scaledMassMars,
+	MASS_SUN,
+	MASS_EARTH,
+	MASS_MOON,
+	MASS_MARS,
 	SUN_POSITION,
 	SUN_VELOCITY,
 	SUN_ACCELERATION,
@@ -33,7 +33,7 @@ export function createSun(scene: THREE.Scene) {
 	light.castShadow = true;
 	light.shadow.mapSize.width = 1024;
 	light.shadow.mapSize.height = 1024;
-	light.shadow.camera.near = 0.5;
+	light.shadow.camera.near = 0.01;
 	light.shadow.camera.far = 60;
 	light.shadow.bias = -0.0001;
 	scene.add(light);
@@ -127,12 +127,13 @@ export function createSun(scene: THREE.Scene) {
 
 	const sun = new Body(
 		mesh,
-		scaledMassSun,
+		MASS_SUN,
 		SUN_POSITION,
 		SUN_VELOCITY,
 		SUN_ACCELERATION,
 		"Sun",
 	);
+	sun.renderScale = RENDER_SCALE;
 
 	sun.addToScene(scene);
 	return sun;
@@ -151,12 +152,13 @@ export function createEarth(scene: THREE.Scene) {
 	mesh.receiveShadow = true;
 	const earth = new Body(
 		mesh,
-		scaledMassEarth,
+		MASS_EARTH,
 		EARTH_POSITION,
 		EARTH_VELOCITY,
 		EARTH_ACCELERATION,
 		"Earth",
 	);
+	earth.renderScale = RENDER_SCALE;
 	earth.addToScene(scene);
 	return earth;
 }
@@ -174,12 +176,13 @@ export function createMoon(scene: THREE.Scene) {
 	mesh.receiveShadow = true;
 	const moon = new Body(
 		mesh,
-		scaledMassMoon,
+		MASS_MOON,
 		MOON_POSITION,
 		MOON_VELOCITY,
 		MOON_ACCELERATION,
 		"Moon",
 	);
+	moon.renderScale = RENDER_SCALE;
 	moon.addToScene(scene);
 	return moon;
 }
@@ -197,12 +200,13 @@ export function createMars(scene: THREE.Scene) {
 	mesh.receiveShadow = true;
 	const mars = new Body(
 		mesh,
-		scaledMassMars,
+		MASS_MARS,
 		MARS_POSITION,
 		MARS_VELOCITY,
 		MARS_ACCELERATION,
 		"Mars",
 	);
+	mars.renderScale = RENDER_SCALE;
 	mars.addToScene(scene);
 	return mars;
 }

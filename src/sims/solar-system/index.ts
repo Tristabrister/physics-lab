@@ -12,13 +12,12 @@ import {
 	temperatureToColor,
 } from "./setup";
 import {
-	scaledG,
+	G,
 	PLAYBACK_SPEED,
 	MAX_PHYSICS_STEP,
 	SUN_TEMPERATURE,
-	LENGTH_SCALE,
-	MASS_SCALE,
-	TIME_SCALE,
+	RENDER_SCALE,
+	SECONDS_PER_DAY,
 } from "./constants";
 
 // ── Module-level state ─────────────────────────────────
@@ -30,7 +29,7 @@ let bodies: Body[];
 let sunMaterial: THREE.ShaderMaterial;
 let sunLight: THREE.PointLight;
 
-// Per-body min/max heliocentric distance (scaled units, updated each frame)
+// Per-body min/max heliocentric distance (metres, updated each frame)
 const helioRange = new Map<Body, { min: number; max: number }>();
 
 // ── Diagnostics panel (live-updating readouts) ─────────
@@ -123,11 +122,11 @@ export function update(dt: number) {
 	sunMaterial.uniforms.uBaseColor.value.set(r / 255, g / 255, b / 255);
 	sunLight.color.setRGB(r / 255, g / 255, b / 255);
 
-	const dtTotal = dt * settings.playbackSpeed;
-	const nSteps = Math.max(1, Math.ceil(dtTotal / MAX_PHYSICS_STEP));
-	const step = dtTotal / nSteps;
+	const simSeconds = dt * settings.playbackSpeed * SECONDS_PER_DAY;
+	const nSteps = Math.max(1, Math.ceil(simSeconds / MAX_PHYSICS_STEP));
+	const step = simSeconds / nSteps;
 	for (let i = 0; i < nSteps; i++) {
-		applyGravity(bodies, step, scaledG);
+		applyGravity(bodies, step, G);
 	}
 
 	// Track min/max heliocentric distance per body
@@ -178,9 +177,9 @@ export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 	const b = bodies.find((b) => b.mesh === mesh);
 	if (!b) return null;
 
-	const speedMps = b.velocity.length() * (LENGTH_SCALE / TIME_SCALE);
-	const distM = b.position.length() * LENGTH_SCALE;
-	const massKg = b.mass * MASS_SCALE;
+	const speedMps = b.velocity.length(); // m/s
+	const distM = b.position.length(); // m
+	const massKg = b.mass; // kg
 
 	const info: Record<string, string> = { Name: b.name };
 
@@ -195,8 +194,8 @@ export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 		const range = helioRange.get(b);
 		if (range) {
 			info["Heliocentric range"] =
-				`${((range.min * LENGTH_SCALE) / 1000).toExponential(3)} – ` +
-				`${((range.max * LENGTH_SCALE) / 1000).toExponential(3)} km`;
+				`${(range.min / 1000).toExponential(3)} – ` +
+				`${(range.max / 1000).toExponential(3)} km`;
 		}
 	}
 
