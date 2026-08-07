@@ -27,6 +27,10 @@ let mars: Body;
 let bodies: Body[];
 let sunMaterial: THREE.ShaderMaterial;
 let sunLight: THREE.PointLight;
+
+// Per-body min/max heliocentric distance (scaled units, updated each frame)
+const helioRange = new Map<Body, { min: number; max: number }>();
+
 const settings = {
 	playbackSpeed: PLAYBACK_SPEED,
 	sunTemp: SUN_TEMPERATURE,
@@ -39,6 +43,12 @@ export function init(scene: THREE.Scene) {
 	moon = createMoon(scene);
 	mars = createMars(scene);
 	bodies = [sun, earth, moon, mars];
+	for (const b of bodies) {
+		if (b !== sun) {
+			const d = b.position.length();
+			helioRange.set(b, { min: d, max: d });
+		}
+	}
 	sunMaterial = sun.mesh.material as THREE.ShaderMaterial;
 	sunLight = sun.mesh.userData.sunLight as THREE.PointLight;
 
@@ -61,6 +71,15 @@ export function update(dt: number) {
 	const step = dtTotal / nSteps;
 	for (let i = 0; i < nSteps; i++) {
 		applyGravity(bodies, step, scaledG);
+	}
+
+	// Track min/max heliocentric distance per body
+	for (const b of bodies) {
+		if (b === sun) continue;
+		const d = b.position.length();
+		const range = helioRange.get(b)!;
+		if (d < range.min) range.min = d;
+		if (d > range.max) range.max = d;
 	}
 
 	// Display-only: the Moon's true orbit (0.0384 u) sits inside Earth's
@@ -100,6 +119,12 @@ export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 		info.Mass = massKg.toExponential(3) + " kg";
 		info["Orbital speed"] = `${(speedMps / 1000).toFixed(1)} km/s`;
 		info["Heliocentric dist"] = `${(distM / 1000).toExponential(3)} km`;
+		const range = helioRange.get(b);
+		if (range) {
+			info["Heliocentric range"] =
+				`${((range.min * LENGTH_SCALE) / 1000).toExponential(3)} – ` +
+				`${((range.max * LENGTH_SCALE) / 1000).toExponential(3)} km`;
+		}
 	}
 
 	return info;

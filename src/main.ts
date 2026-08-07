@@ -31,9 +31,9 @@ composer.addPass(new RenderPass(scene, camera));
 
 const bloomPass = new UnrealBloomPass(
 	new THREE.Vector2(window.innerWidth, window.innerHeight),
-	1.0, // strength  — glow intensity   (tweak me)
-	0.4, // radius   — glow spread        (tweak me)
-	0.1, // threshold — only bright pixels bloom
+	1, // strength  — glow intensity   (tweak me)
+	1, // radius   — glow spread        (tweak me)
+	0.7, // threshold — only bright pixels bloom
 );
 composer.addPass(bloomPass);
 
@@ -140,7 +140,7 @@ objectList.addEventListener("click", (e) => {
 	const found = router.getBodyList().find((b) => b.name === name);
 	if (found) {
 		followTarget = found.mesh;
-		lastBodyPos.copy(followTarget.position);
+		zoomToBody(followTarget);
 		infoPanel.style.display = "block";
 		connectorLine.style.display = "block";
 		refreshObjectList();
@@ -152,6 +152,22 @@ function clearFollow() {
 	infoPanel.style.display = "none";
 	connectorLine.style.display = "none";
 	refreshObjectList();
+}
+
+/** Pull the camera to a comfortable viewing distance from a followed body. */
+function zoomToBody(body: THREE.Mesh) {
+	const radius = body.geometry.boundingSphere?.radius ?? 1;
+	const targetDist = radius * 8;
+
+	// Use the current camera→body direction, or default to a 45° overhead view
+	const dir = new THREE.Vector3()
+		.subVectors(camera.position, body.position)
+		.normalize();
+	if (dir.length() < 0.01) dir.set(0.5, 0.5, 1).normalize();
+
+	camera.position.copy(body.position).addScaledVector(dir, targetDist);
+	controls.target.copy(body.position);
+	lastBodyPos.copy(body.position);
 }
 
 // Click to pick a body
@@ -174,7 +190,7 @@ renderer.domElement.addEventListener("click", (e) => {
 		while (cur) {
 			if ((cur as THREE.Mesh).isMesh && cur.userData._bodyMesh) {
 				followTarget = cur as THREE.Mesh;
-				lastBodyPos.copy(followTarget.position);
+				zoomToBody(followTarget);
 				infoPanel.style.display = "block";
 				connectorLine.style.display = "block";
 				refreshObjectList();

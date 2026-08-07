@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { Body } from "../../engine/Body";
+import earthDayMap from "../../assets/8k_earth_daymap.jpg";
+import moonMap from "../../assets/8k_moon.jpg";
+import marsMap from "../../assets/8k_mars.jpg";
 import {
 	scaledMassSun,
 	scaledMassEarth,
@@ -15,13 +18,13 @@ import {
 	MOON_POSITION,
 	MOON_VELOCITY,
 	MOON_ACCELERATION,
-	MARS_POSITION, 
+	MARS_POSITION,
 	MARS_VELOCITY,
 	MARS_ACCELERATION,
 } from "./constants";
 
 export function createSun(scene: THREE.Scene) {
-	const light = new THREE.PointLight(0xffeedd, 250, 0, 1.5);
+	const light = new THREE.PointLight(0xffeedd, 80, 0, 1.5);
 	light.position.set(0, 0, 0);
 	light.castShadow = true;
 	light.shadow.mapSize.width = 1024;
@@ -133,10 +136,11 @@ export function createSun(scene: THREE.Scene) {
 
 export function createEarth(scene: THREE.Scene) {
 	const geo = new THREE.SphereGeometry(0.16); // Earth
+	const loader = new THREE.TextureLoader();
 	const mat = new THREE.MeshStandardMaterial({
-		color: 0x3377cc,
-		roughness: 0.35,
-		metalness: 0.05,
+		map: loader.load(earthDayMap),
+		roughness: 1,
+		metalness: 0.0,
 	});
 	const mesh = new THREE.Mesh(geo, mat);
 	mesh.castShadow = true;
@@ -155,8 +159,9 @@ export function createEarth(scene: THREE.Scene) {
 
 export function createMoon(scene: THREE.Scene) {
 	const geo = new THREE.SphereGeometry(0.045); // Moon
+	const loader = new THREE.TextureLoader();
 	const mat = new THREE.MeshStandardMaterial({
-		color: 0xb8b8b8,
+		map: loader.load(moonMap),
 		roughness: 0.7,
 		metalness: 0,
 	});
@@ -177,9 +182,10 @@ export function createMoon(scene: THREE.Scene) {
 
 export function createMars(scene: THREE.Scene) {
 	const geo = new THREE.SphereGeometry(0.16); // Earth
+	const loader = new THREE.TextureLoader();
 	const mat = new THREE.MeshStandardMaterial({
-		color: 0xFF0000,
-		roughness: 0.35,
+		map: loader.load(marsMap),
+		roughness: 0.65,
 		metalness: 0.05,
 	});
 	const mesh = new THREE.Mesh(geo, mat);

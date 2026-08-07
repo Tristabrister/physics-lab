@@ -11,15 +11,17 @@ export function createCamera() {
 	const camera = new THREE.PerspectiveCamera(
 		75,
 		window.innerWidth / window.innerHeight,
-		0.1,
-		1000,
+		0.001,
+		500,
 	);
-	camera.position.set(0, 50, 50);
+	camera.position.set(0, 20, 20);
 	return camera;
 }
 
 export function createRenderer() {
-	const renderer = new THREE.WebGLRenderer();
+	const renderer = new THREE.WebGLRenderer({
+		logarithmicDepthBuffer: true,
+	});
 	renderer.setSize(window.innerWidth, window.innerHeight);
 	renderer.shadowMap.enabled = true;
 	renderer.shadowMap.type = THREE.PCFShadowMap;
