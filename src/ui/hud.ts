@@ -4,11 +4,19 @@ export function createHUD(parent: HTMLElement) {
 	hud.id = "hud-keys";
 	hud.innerHTML = [
 		"<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>",
-		"<span>fly &nbsp;·&nbsp;</span>",
+		"<span>fly</span>",
+		"<span>·</span>",
 		"<kbd>Shift</kbd>",
-		"<span>boost &nbsp;·&nbsp;</span>",
+		"<span>boost</span>",
+		"<span>·</span>",
 		"<kbd>Space</kbd><kbd>Ctrl</kbd>",
-		"<span>up/down &nbsp;·&nbsp; scroll zoom &nbsp;·&nbsp; drag orbit</span>",
+		"<span>up/down</span>",
+		"<span>·</span>",
+		"<span>scroll zoom</span>",
+		"<span>·</span>",
+		"<span>drag orbit</span>",
+		"<span>·</span>",
+		"<span>click body to follow</span>",
 	].join(" ");
 	parent.appendChild(hud);
 	return hud;

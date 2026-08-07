@@ -99,15 +99,7 @@ createHUD(app);
 // ── Click-to-follow + info panel ───────────────────────
 const raycaster = new THREE.Raycaster();
 let followTarget: THREE.Mesh | null = null;
-let rightMouseDown = false;
-
-// Detect right-mouse pan (breaks follow), track for follow logic
-window.addEventListener("mousedown", (e) => {
-	if (e.button === 2) rightMouseDown = true;
-});
-window.addEventListener("mouseup", (e) => {
-	if (e.button === 2) rightMouseDown = false;
-});
+const lastBodyPos = new THREE.Vector3();
 
 // Info popup
 const infoPanel = document.createElement("div");
@@ -148,6 +140,7 @@ objectList.addEventListener("click", (e) => {
 	const found = router.getBodyList().find((b) => b.name === name);
 	if (found) {
 		followTarget = found.mesh;
+		lastBodyPos.copy(followTarget.position);
 		infoPanel.style.display = "block";
 		connectorLine.style.display = "block";
 		refreshObjectList();
@@ -181,6 +174,7 @@ renderer.domElement.addEventListener("click", (e) => {
 		while (cur) {
 			if ((cur as THREE.Mesh).isMesh && cur.userData._bodyMesh) {
 				followTarget = cur as THREE.Mesh;
+				lastBodyPos.copy(followTarget.position);
 				infoPanel.style.display = "block";
 				connectorLine.style.display = "block";
 				refreshObjectList();
@@ -202,26 +196,30 @@ function animate(time: number) {
 
 	// WASD — fly the camera through space (move position + target together).
 	// Mouse drag still orbits around the current target as usual.
-	const flySpeed = 5 * frameSeconds * (keys["shift"] ? 2 : 1);
-	const forward = new THREE.Vector3()
-		.subVectors(controls.target, camera.position)
-		.normalize();
-	const right = new THREE.Vector3()
-		.crossVectors(forward, camera.up)
-		.normalize();
-	const up = camera.up.clone();
+	// Skip when following — the camera is locked to the body.
+	if (!followTarget) {
+		const flySpeed = 5 * frameSeconds * (keys["shift"] ? 2 : 1);
+		const forward = new THREE.Vector3()
+			.subVectors(controls.target, camera.position)
+			.normalize();
+		const right = new THREE.Vector3()
+			.crossVectors(forward, camera.up)
+			.normalize();
+		const up = camera.up.clone();
 
-	const move = new THREE.Vector3();
+		const move = new THREE.Vector3();
 
-	if (keys["w"] || keys["arrowup"]) move.addScaledVector(forward, flySpeed);
-	if (keys["s"] || keys["arrowdown"]) move.addScaledVector(forward, -flySpeed);
-	if (keys["a"] || keys["arrowleft"]) move.addScaledVector(right, -flySpeed);
-	if (keys["d"] || keys["arrowright"]) move.addScaledVector(right, flySpeed);
-	if (keys[" "]) move.addScaledVector(up, flySpeed);
-	if (keys["control"]) move.addScaledVector(up, -flySpeed);
+		if (keys["w"] || keys["arrowup"]) move.addScaledVector(forward, flySpeed);
+		if (keys["s"] || keys["arrowdown"])
+			move.addScaledVector(forward, -flySpeed);
+		if (keys["a"] || keys["arrowleft"]) move.addScaledVector(right, -flySpeed);
+		if (keys["d"] || keys["arrowright"]) move.addScaledVector(right, flySpeed);
+		if (keys[" "]) move.addScaledVector(up, flySpeed);
+		if (keys["control"]) move.addScaledVector(up, -flySpeed);
 
-	controls.target.add(move);
-	camera.position.add(move);
+		controls.target.add(move);
+		camera.position.add(move);
+	}
 
 	// Update current sim
 	router.update(frameSeconds);
@@ -229,57 +227,42 @@ function animate(time: number) {
 	// Refresh object list (cheap DOM check, runs once per frame)
 	refreshObjectList();
 
-	// ── Follow mode ─────────────────────────────────
+	// ── Third‑person follow ──────────────────────────
 	if (followTarget) {
-		const panning =
-			keys["w"] ||
-			keys["a"] ||
-			keys["s"] ||
-			keys["d"] ||
-			keys["arrowup"] ||
-			keys["arrowdown"] ||
-			keys["arrowleft"] ||
-			keys["arrowright"] ||
-			keys[" "] ||
-			keys["control"] ||
-			rightMouseDown;
+		const targetPos = followTarget.position;
+		const delta = targetPos.clone().sub(lastBodyPos);
+		camera.position.add(delta);
+		controls.target.copy(targetPos);
+		lastBodyPos.copy(targetPos);
 
-		if (panning) {
-			clearFollow();
-		} else {
-			// Smoothly track the body
-			const targetPos = followTarget.position;
-			controls.target.lerp(targetPos, 0.08);
-
-			// Update info panel content
-			const info = router.getBodyInfo(followTarget);
-			if (info) {
-				infoPanel.innerHTML = Object.entries(info)
-					.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
-					.join("");
-			}
-
-			// Pin panel near the body on screen
-			const screenPos = targetPos.clone().project(camera);
-			const sx = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
-			const sy = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
-			const px = sx + 28;
-			const py = sy - 48;
-			infoPanel.style.left = `${px}px`;
-			infoPanel.style.top = `${py}px`;
-
-			// Connector line from body to panel
-			const dx = px - sx;
-			const dy = py - sy;
-			const len = Math.hypot(dx, dy);
-			const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-			connectorLine.style.width = `${len}px`;
-			connectorLine.style.left = `${sx}px`;
-			connectorLine.style.top = `${sy}px`;
-			connectorLine.style.transform = `rotate(${ang}deg)`;
-
-			refreshObjectList();
+		// Update info panel content
+		const info = router.getBodyInfo(followTarget);
+		if (info) {
+			infoPanel.innerHTML = Object.entries(info)
+				.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
+				.join("");
 		}
+
+		// Pin panel near the body on screen
+		const screenPos = targetPos.clone().project(camera);
+		const sx = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+		const sy = (-screenPos.y * 0.5 + 0.5) * window.innerHeight;
+		const px = sx + 28;
+		const py = sy - 48;
+		infoPanel.style.left = `${px}px`;
+		infoPanel.style.top = `${py}px`;
+
+		// Connector line from body to panel
+		const dx = px - sx;
+		const dy = py - sy;
+		const len = Math.hypot(dx, dy);
+		const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+		connectorLine.style.width = `${len}px`;
+		connectorLine.style.left = `${sx}px`;
+		connectorLine.style.top = `${sy}px`;
+		connectorLine.style.transform = `rotate(${ang}deg)`;
+
+		refreshObjectList();
 	}
 
 	controls.update();
