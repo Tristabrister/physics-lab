@@ -1,4 +1,5 @@
 import type { Router } from "./router";
+import "./sidebar.css";
 
 // ── Navigation tree (edit this to add / reorganise sims) ──
 export interface NavNode {

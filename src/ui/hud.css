@@ -1,0 +1,47 @@
+/* ── Hint bar ─────────────────────────────────────────── */
+#hud-keys {
+	position: fixed;
+	bottom: 16px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	display: flex;
+	gap: 8px;
+	pointer-events: none;
+}
+
+#hud-keys kbd {
+	display: inline-block;
+	background: rgba(255, 255, 255, 0.07);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 5px;
+	padding: 2px 8px;
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.55);
+	letter-spacing: 0.03em;
+}
+
+#hud-keys span {
+	color: rgba(255, 255, 255, 0.35);
+	font-size: 11px;
+}
+
+/* ── Pause badge ─────────────────────────────────────── */
+#pause-badge {
+	position: fixed;
+	top: 18px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	pointer-events: none;
+	background: rgba(255, 170, 60, 0.16);
+	border: 1px solid rgba(255, 170, 60, 0.45);
+	color: #ffd28a;
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	padding: 5px 16px;
+	border-radius: 999px;
+	backdrop-filter: blur(6px);
+	text-transform: uppercase;
+}

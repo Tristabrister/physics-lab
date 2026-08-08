@@ -1,0 +1,29 @@
+/* ── lil-gui dark overlay ─────────────────────────────── */
+.lil-gui {
+	--background-color: rgba(14, 16, 24, 0.85);
+	--widget-color: #c8cdd4;
+	--title-background-color: rgba(20, 22, 32, 0.9);
+	--title-color: #e0e4ea;
+	--font-family: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+	backdrop-filter: blur(12px);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 10px !important;
+	box-shadow:
+		0 8px 32px rgba(0, 0, 0, 0.5),
+		0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.lil-gui .title {
+	border-radius: 10px 10px 0 0 !important;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	font-size: 11px;
+}
+
+.lil-gui .children {
+	padding: 6px 12px 10px;
+}
+.lil-gui input[type="range"] {
+	accent-color: #7c8cf8;
+}

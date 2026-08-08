@@ -4,10 +4,10 @@ export class Body {
 	mesh: Mesh;
 	name: string;
 	mass: number;
-	/** Physics state in real SI (m, m/s, m/s²) — never scaled. */
 	position: Vector3;
 	velocity: Vector3;
 	acceleration = new Vector3();
+
 	/** Metres → render units, applied only when syncing to the mesh. */
 	renderScale: number;
 
@@ -34,7 +34,7 @@ export class Body {
 		this.velocity.addScaledVector(this.acceleration, dt);
 		this.position.addScaledVector(this.velocity, dt);
 		this.syncMesh();
-		// Acceleration is an accumulator — cleared after each step.
+
 		this.acceleration.set(0, 0, 0);
 	}
 

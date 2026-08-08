@@ -1,18 +1,11 @@
 import * as THREE from "three";
 
-// ═══════════════════════════════════════════════════════════
-//  Unit system
-//  • Physics runs in real SI units: metres, kilograms, seconds.
-//  • Rendering converts once: 1 render unit = 1 AU (RENDER_SCALE).
-//  Everything on screen is true scale — sizes, distances, light
-//  falloff — like NASA Eyes. Never mix the two spaces.
-// ═══════════════════════════════════════════════════════════
 
 export const G = 6.6743e-11; // m³ kg⁻¹ s⁻²
 export const AU = 1.496e11; // m
 export const SECONDS_PER_DAY = 86400;
 
-/** Multiply metres by this to get render units (1 render unit = 1 AU). */
+/** Multiply meters by this to get render units (1 render unit = 1 AU). */
 export const RENDER_SCALE = 1 / AU;
 
 // ── Masses (kg) ────────────────────────────────────────
@@ -45,7 +38,7 @@ export const RING_INNER_SATURN = 7.0e7;
 export const RING_OUTER_SATURN = 1.4e8;
 
 // ── Orbit geometry (m) ─────────────────────────────────
-// Perihelion / perigee — the bodies start here.
+// Perihelion / perigee
 export const DIST_EARTH_SUN = 1.471e11;
 export const DIST_EARTH_MOON = 3.626e8;
 export const DIST_MARS_SUN = 2.067e11;
@@ -88,11 +81,11 @@ export const TILT_SATURN = THREE.MathUtils.degToRad(26.73);
 export const TILT_URANUS = THREE.MathUtils.degToRad(97.77);
 export const TILT_NEPTUNE = THREE.MathUtils.degToRad(28.32);
 
-export const SUN_TEMPERATURE = 5778; // K — solar photosphere
+export const SUN_TEMPERATURE = 5778; // K
 
 // ── Initial conditions ─────────────────────────────────
 // Bodies start at perihelion on +X. Velocity along −Z makes the
-// orbits counterclockwise seen from +Y (north), as in reality.
+// orbits counterclockwise seen from +Y (north)
 
 // Speeds come from vis-viva: v² = GM (2/r − 1/a).
 const visViva = (M: number, r: number, a: number) =>

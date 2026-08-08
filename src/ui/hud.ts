@@ -1,28 +1,20 @@
-/** On-screen keyboard-hint bar pinned to the bottom centre. */
-export function createHUD(parent: HTMLElement) {
-	const hud = document.createElement("div");
-	hud.id = "hud-keys";
-	hud.innerHTML = [
-		"<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>",
-		"<span>fly</span>",
-		"<span>·</span>",
-		"<kbd>Shift</kbd>",
-		"<span>boost</span>",
-		"<span>·</span>",
-		"<kbd>Space</kbd><kbd>Ctrl</kbd>",
-		"<span>up/down</span>",
-		"<span>·</span>",
-		"<span>scroll zoom</span>",
-		"<span>·</span>",
-		"<span>drag orbit</span>",
-		"<span>·</span>",
-		"<span>click body to follow</span>",
-		"<span>·</span>",
-		"<kbd>P</kbd>",
-		"<span>pause</span>",
-	].join(" ");
-	parent.appendChild(hud);
-	return hud;
+import "./hud.css";
+
+export interface Hint {
+	keys?: string[];
+	label: string;
+}
+
+/** Keyboard/mouse hint bar pinned to the bottom centre. Content is caller-supplied —
+ * a sim lists whatever controls it actually has. */
+export function createHintBar(parent: HTMLElement, hints: Hint[]) {
+	const bar = document.createElement("div");
+	bar.id = "hud-keys";
+	bar.innerHTML = hints
+		.map((h) => (h.keys ?? []).map((k) => `<kbd>${k}</kbd>`).join("") + `<span>${h.label}</span>`)
+		.join("<span>·</span>");
+	parent.appendChild(bar);
+	return bar;
 }
 
 /** "⏸ Paused" badge shown while the simulation is paused. */

@@ -3,7 +3,12 @@ import type { Body } from "../../engine/Body";
 import type { Controller, GUI } from "lil-gui";
 import applyGravity from "../../engine/gravity";
 import { createPanel } from "../../ui/gui";
+import { createHintBar, type Hint } from "../../ui/hud";
 import { isPaused, setPaused, onPauseChange } from "../../app/pause";
+import { createThreeOrbitStage } from "../../kits/three-orbit";
+import { createFlyCamera } from "../../kits/three-orbit/flyCamera";
+import { createBodyExplorer } from "../../kits/three-orbit/bodyExplorer";
+import "./diagnostics.css";
 import {
 	createSun,
 	createMercury,
@@ -47,7 +52,21 @@ import {
 	SPIN_NEPTUNE,
 } from "./constants";
 
+const HINTS: Hint[] = [
+	{ keys: ["W", "A", "S", "D"], label: "fly" },
+	{ keys: ["Shift"], label: "boost" },
+	{ keys: ["Space", "Ctrl"], label: "up/down" },
+	{ label: "scroll zoom" },
+	{ label: "drag orbit" },
+	{ label: "click body to follow" },
+	{ keys: ["P"], label: "pause" },
+];
+
 // ── Module-level state ─────────────────────────────────
+let stage: ReturnType<typeof createThreeOrbitStage>;
+let flyCam: ReturnType<typeof createFlyCamera>;
+let explorer: ReturnType<typeof createBodyExplorer>;
+let hud: HTMLElement;
 let sun: Body;
 let earth: Body;
 let bodies: Body[];
@@ -120,8 +139,47 @@ function applySunColor() {
 	sunLight.color.setRGB(r / 255, g / 255, b / 255);
 }
 
-// ── Public interface ───────────────────────────────────
-export function init(scene: THREE.Scene) {
+function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
+	const b = bodies.find((b) => b.mesh === mesh);
+	if (!b) return null;
+
+	const info: Record<string, string> = { Name: b.name };
+	info.Mass = b.mass.toExponential(3) + " kg";
+	const radius = RADII_M[b.name];
+	if (radius) info.Radius = `${(radius / 1000).toLocaleString()} km`;
+
+	if (b === sun) {
+		info.Temperature = `${settings.sunTemp} K`;
+	} else {
+		info["Orbital speed"] = `${(b.velocity.length() / 1000).toFixed(1)} km/s`;
+		info["Heliocentric dist"] = `${(b.position.length() / AU).toFixed(4)} AU`;
+		const range = helioRange.get(b);
+		if (range) {
+			info["Observed range"] =
+				`${(range.min / AU).toFixed(4)} – ${(range.max / AU).toFixed(4)} AU`;
+		}
+	}
+
+	return info;
+}
+
+/**
+ * Scale the sun's actual PointLight intensity — not camera exposure — so
+ * only lit bodies are affected. The sun's own disc is a self-illuminated
+ * ShaderMaterial that ignores scene lights, so it's untouched regardless
+ * of what factor is passed here.
+ */
+function setLightBoost(factor: number) {
+	if (sunLight) sunLight.intensity = SUN_LIGHT_INTENSITY * factor;
+}
+
+// ── SimModule ───────────────────────────────────────────
+export function mount(container: HTMLElement) {
+	stage = createThreeOrbitStage(container, {
+		bloom: { strength: 0.45, radius: 0.6, threshold: 1.0 }, // only the HDR sun (>1.0) blooms
+	});
+	const { scene, camera, controls } = stage;
+
 	sun = createSun(scene);
 	const mercury = createMercury(scene);
 	const venus = createVenus(scene);
@@ -133,18 +191,7 @@ export function init(scene: THREE.Scene) {
 	const uranus = createUranus(scene);
 	const neptune = createNeptune(scene);
 
-	bodies = [
-		sun,
-		mercury,
-		venus,
-		earth,
-		moon,
-		mars,
-		jupiter,
-		saturn,
-		uranus,
-		neptune,
-	];
+	bodies = [sun, mercury, venus, earth, moon, mars, jupiter, saturn, uranus, neptune];
 
 	elapsedDays = 0;
 	helioRange.clear();
@@ -203,9 +250,29 @@ export function init(scene: THREE.Scene) {
 		diagCtrls[k] = dg.add(diag, k).disable();
 	}
 	dg.close();
+
+	explorer = createBodyExplorer({
+		container,
+		domElement: stage.renderer.domElement,
+		camera,
+		scene,
+		controls,
+		getBodies: () => bodies.map((b) => ({ name: b.name, mesh: b.mesh })),
+		getInfo: getBodyInfo,
+		onLightBoostChange: setLightBoost,
+	});
+
+	flyCam = createFlyCamera({
+		camera,
+		controls,
+		getObstacles: () => bodies.map((b) => b.mesh),
+		isEnabled: () => !explorer.isFollowing(),
+	});
+
+	hud = createHintBar(container, HINTS);
 }
 
-export function update(dt: number) {
+function stepSim(dt: number) {
 	// Animate the procedural solar surface (real-time, not sim-time)
 	sunMaterial.uniforms.uTime.value += dt;
 
@@ -243,49 +310,21 @@ export function update(dt: number) {
 	}
 }
 
-export function destroy(scene: THREE.Scene) {
-	// The sun's light is a child of its mesh, so this removes it too.
-	for (const b of bodies) scene.remove(b.mesh);
+export function frame(dt: number) {
+	if (!isPaused()) stepSim(dt);
+
+	flyCam.update(dt);
+	explorer.preRender(dt);
+	stage.updateControls();
+	explorer.postRender(dt);
+	stage.render();
+}
+
+export function unmount(_container: HTMLElement) {
 	gui.destroy();
 	unsubscribePause();
-}
-
-export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
-	const b = bodies.find((b) => b.mesh === mesh);
-	if (!b) return null;
-
-	const info: Record<string, string> = { Name: b.name };
-	info.Mass = b.mass.toExponential(3) + " kg";
-	const radius = RADII_M[b.name];
-	if (radius) info.Radius = `${(radius / 1000).toLocaleString()} km`;
-
-	if (b === sun) {
-		info.Temperature = `${settings.sunTemp} K`;
-	} else {
-		info["Orbital speed"] = `${(b.velocity.length() / 1000).toFixed(1)} km/s`;
-		info["Heliocentric dist"] = `${(b.position.length() / AU).toFixed(4)} AU`;
-		const range = helioRange.get(b);
-		if (range) {
-			info["Observed range"] =
-				`${(range.min / AU).toFixed(4)} – ${(range.max / AU).toFixed(4)} AU`;
-		}
-	}
-
-	return info;
-}
-
-export function getBodyList(): { name: string; mesh: THREE.Mesh }[] {
-	return bodies.map((b) => ({ name: b.name, mesh: b.mesh }));
-}
-
-/**
- * Scale the sun's actual PointLight intensity — not camera exposure — so
- * only lit bodies are affected. The sun's own disc is a self-illuminated
- * ShaderMaterial that ignores scene lights entirely, so it's untouched
- * regardless of what factor is passed here (crucial: a global exposure
- * multiplier was tried first and blew out/blacked out the sun itself
- * depending on what was followed).
- */
-export function setLightBoost(factor: number) {
-	if (sunLight) sunLight.intensity = SUN_LIGHT_INTENSITY * factor;
+	flyCam.dispose();
+	explorer.dispose();
+	hud.remove();
+	stage.dispose();
 }
