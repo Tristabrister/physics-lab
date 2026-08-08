@@ -6,10 +6,17 @@ import { createPanel } from "../../ui/gui";
 import { isPaused, setPaused, onPauseChange } from "../../app/pause";
 import {
 	createSun,
+	createMercury,
+	createVenus,
 	createEarth,
 	createMoon,
 	createMars,
+	createJupiter,
+	createSaturn,
+	createUranus,
+	createNeptune,
 	temperatureToColor,
+	SUN_LIGHT_INTENSITY,
 } from "./setup";
 import {
 	G,
@@ -19,13 +26,25 @@ import {
 	PLAYBACK_SPEED,
 	SUN_TEMPERATURE,
 	RADIUS_SUN,
+	RADIUS_MERCURY,
+	RADIUS_VENUS,
 	RADIUS_EARTH,
 	RADIUS_MOON,
 	RADIUS_MARS,
+	RADIUS_JUPITER,
+	RADIUS_SATURN,
+	RADIUS_URANUS,
+	RADIUS_NEPTUNE,
 	SPIN_SUN,
+	SPIN_MERCURY,
+	SPIN_VENUS,
 	SPIN_EARTH,
 	SPIN_MOON,
 	SPIN_MARS,
+	SPIN_JUPITER,
+	SPIN_SATURN,
+	SPIN_URANUS,
+	SPIN_NEPTUNE,
 } from "./constants";
 
 // ── Module-level state ─────────────────────────────────
@@ -43,9 +62,15 @@ let spins: { body: Body; rate: number }[] = [];
 
 const RADII_M: Record<string, number> = {
 	Sun: RADIUS_SUN,
+	Mercury: RADIUS_MERCURY,
+	Venus: RADIUS_VENUS,
 	Earth: RADIUS_EARTH,
 	Moon: RADIUS_MOON,
 	Mars: RADIUS_MARS,
+	Jupiter: RADIUS_JUPITER,
+	Saturn: RADIUS_SATURN,
+	Uranus: RADIUS_URANUS,
+	Neptune: RADIUS_NEPTUNE,
 };
 
 // Per-body min/max heliocentric distance (metres, updated each frame)
@@ -72,8 +97,9 @@ function formatSpeed(daysPerSec: number) {
 function onSpeedChange(logValue: number) {
 	settings.playbackSpeed = Math.pow(10, logValue);
 	if (speedReadoutCtrl) {
-		(speedReadoutCtrl.object as { display: string }).display =
-			formatSpeed(settings.playbackSpeed);
+		(speedReadoutCtrl.object as { display: string }).display = formatSpeed(
+			settings.playbackSpeed,
+		);
 		speedReadoutCtrl.updateDisplay();
 	}
 }
@@ -97,10 +123,28 @@ function applySunColor() {
 // ── Public interface ───────────────────────────────────
 export function init(scene: THREE.Scene) {
 	sun = createSun(scene);
+	const mercury = createMercury(scene);
+	const venus = createVenus(scene);
 	earth = createEarth(scene);
 	const moon = createMoon(scene);
 	const mars = createMars(scene);
-	bodies = [sun, earth, moon, mars];
+	const jupiter = createJupiter(scene);
+	const saturn = createSaturn(scene);
+	const uranus = createUranus(scene);
+	const neptune = createNeptune(scene);
+
+	bodies = [
+		sun,
+		mercury,
+		venus,
+		earth,
+		moon,
+		mars,
+		jupiter,
+		saturn,
+		uranus,
+		neptune,
+	];
 
 	elapsedDays = 0;
 	helioRange.clear();
@@ -113,9 +157,15 @@ export function init(scene: THREE.Scene) {
 	const TWO_PI = 2 * Math.PI;
 	spins = [
 		{ body: sun, rate: TWO_PI / SPIN_SUN },
+		{ body: mercury, rate: TWO_PI / SPIN_MERCURY },
+		{ body: venus, rate: TWO_PI / SPIN_VENUS },
 		{ body: earth, rate: TWO_PI / SPIN_EARTH },
 		{ body: moon, rate: TWO_PI / SPIN_MOON },
 		{ body: mars, rate: TWO_PI / SPIN_MARS },
+		{ body: jupiter, rate: TWO_PI / SPIN_JUPITER },
+		{ body: saturn, rate: TWO_PI / SPIN_SATURN },
+		{ body: uranus, rate: TWO_PI / SPIN_URANUS },
+		{ body: neptune, rate: TWO_PI / SPIN_NEPTUNE },
 	];
 
 	sunMaterial = sun.mesh.material as THREE.ShaderMaterial;
@@ -226,4 +276,16 @@ export function getBodyInfo(mesh: THREE.Mesh): Record<string, string> | null {
 
 export function getBodyList(): { name: string; mesh: THREE.Mesh }[] {
 	return bodies.map((b) => ({ name: b.name, mesh: b.mesh }));
+}
+
+/**
+ * Scale the sun's actual PointLight intensity — not camera exposure — so
+ * only lit bodies are affected. The sun's own disc is a self-illuminated
+ * ShaderMaterial that ignores scene lights entirely, so it's untouched
+ * regardless of what factor is passed here (crucial: a global exposure
+ * multiplier was tried first and blew out/blacked out the sun itself
+ * depending on what was followed).
+ */
+export function setLightBoost(factor: number) {
+	if (sunLight) sunLight.intensity = SUN_LIGHT_INTENSITY * factor;
 }

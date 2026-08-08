@@ -248,6 +248,32 @@ renderer.domElement.addEventListener("click", (e) => {
 	clearFollow();
 });
 
+// ── Light boost ──────────────────────────────────────────
+// Sunlight is real inverse-square, so a fixed light calibrated for Earth
+// (~1 AU) leaves Mercury blown out and Neptune essentially black — both
+// physically correct, both unwatchable. Like a camera's auto gain, the
+// star's light scales with (distance from it)² while following a body,
+// exactly cancelling the falloff so whatever you're looking at reads at
+// Earth-equivalent brightness.
+//
+// This scales the actual light (via the sim's setLightBoost), not
+// camera exposure — a global exposure multiplier was tried first, and
+// broke the sun's own appearance both ways: at distance 0 (following
+// the sun itself) it clamped to a dim floor and looked washed-out flat;
+// while following a distant planet it grew to 100s–1000s and blew the
+// sun into a flickering white blob whenever it re-entered frame, since
+// exposure is a whole-frame multiplier and the sun's HDR shader was
+// never meant to be part of that compensation. Scaling the light
+// instead leaves the sun (a self-lit ShaderMaterial that ignores scene
+// lights) untouched no matter what's followed.
+//
+// Assumes the star sits at the scene origin — true for this sim, worth
+// revisiting if a future sim doesn't put its star there. Distance is
+// read directly in render units since 1 render unit = 1 AU by
+// construction (RENDER_SCALE).
+const BASE_LIGHT_BOOST = 1;
+let currentLightBoost = BASE_LIGHT_BOOST;
+
 // ── Animation loop ─────────────────────────────────────
 const easeInOut = (t: number) => t * t * (3 - 2 * t);
 let lastTime = 0;
@@ -387,6 +413,22 @@ function animate(time: number) {
 		connectorLine.style.top = `${lsy}px`;
 		connectorLine.style.transform = `rotate(${(Math.atan2(dy, dx) * 180) / Math.PI}deg)`;
 	}
+
+	// Ease the boost toward its target rather than snapping, so it settles
+	// in over about the same beat as the fly-to camera move. Distance is
+	// clamped away from 0 — a body's own distance from itself (following
+	// the sun) would otherwise divide-by-zero-style blow up the target.
+	const followDist = followTarget ? followTarget.position.length() : 0;
+	const targetLightBoost = followTarget
+		? THREE.MathUtils.clamp(Math.max(followDist, 0.3) ** 2, 0.05, 2000)
+		: BASE_LIGHT_BOOST;
+	const boostLerp = 1 - Math.pow(0.001, frameSeconds);
+	currentLightBoost = THREE.MathUtils.lerp(
+		currentLightBoost,
+		targetLightBoost,
+		boostLerp,
+	);
+	router.setLightBoost(currentLightBoost);
 
 	// ── Distant-body visibility floor ────────────────
 	// True scale means a planet is sub-pixel from across the system.

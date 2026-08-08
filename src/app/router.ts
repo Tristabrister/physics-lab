@@ -10,6 +10,13 @@ export interface SimModule {
 	getBodyInfo?(mesh: Mesh): Record<string, string> | null;
 	/** Optional — list all bodies so the object‑list pills can render. */
 	getBodyList?(): { name: string; mesh: Mesh }[];
+	/**
+	 * Optional — scale the star's light by this factor, so whatever body
+	 * the camera is following reads at consistent brightness regardless
+	 * of how far it orbits from the star (real inverse-square light means
+	 * Mercury would otherwise blow out and Neptune would render black).
+	 */
+	setLightBoost?(factor: number): void;
 }
 
 type SimLoader = () => Promise<SimModule>;
@@ -57,6 +64,10 @@ export class Router {
 
 	getBodyList(): { name: string; mesh: Mesh }[] {
 		return this.current?.getBodyList?.() ?? [];
+	}
+
+	setLightBoost(factor: number) {
+		this.current?.setLightBoost?.(factor);
 	}
 
 	start(defaultSim = "solar-system") {

@@ -1,35 +1,79 @@
 import * as THREE from "three";
 import { Body } from "../../engine/Body";
+import venusMap from "../../assets/4k_venus_atmosphere.jpg";
 import earthDayMap from "../../assets/8k_earth_daymap.jpg";
+import earthCloudsMap from "../../assets/8k_earth_clouds.jpg";
 import moonMap from "../../assets/8k_moon.jpg";
 import marsMap from "../../assets/8k_mars.jpg";
+import jupiterMap from "../../assets/8k_jupiter.jpg";
+import saturnMap from "../../assets/8k_saturn.jpg";
+import saturnRingMap from "../../assets/8k_saturn_ring_alpha.png";
+import neptuneMap from "../../assets/2k_neptune.jpg";
+// No Mercury or Uranus texture assets exist yet — createMercury/createUranus
+// below fall back to a flat colour until 8k_mercury.jpg / 2k_uranus.jpg (or
+// similar) are dropped into src/assets and wired up the same way as Jupiter.
+import mercuryMap from "../../assets/8k_mercury.jpg";
+import uranusMap from "../../assets/2k_uranus.jpg";
 import {
 	RENDER_SCALE,
 	MASS_SUN,
+	MASS_MERCURY,
+	MASS_VENUS,
 	MASS_EARTH,
 	MASS_MOON,
 	MASS_MARS,
+	MASS_JUPITER,
+	MASS_SATURN,
+	MASS_URANUS,
+	MASS_NEPTUNE,
 	RADIUS_SUN,
+	RADIUS_MERCURY,
+	RADIUS_VENUS,
 	RADIUS_EARTH,
 	RADIUS_MOON,
 	RADIUS_MARS,
+	RADIUS_JUPITER,
+	RADIUS_SATURN,
+	RADIUS_URANUS,
+	RADIUS_NEPTUNE,
+	RING_INNER_SATURN,
+	RING_OUTER_SATURN,
 	SUN_POSITION,
 	SUN_VELOCITY,
 	SUN_TEMPERATURE,
+	MERCURY_POSITION,
+	MERCURY_VELOCITY,
+	VENUS_POSITION,
+	VENUS_VELOCITY,
 	EARTH_POSITION,
 	EARTH_VELOCITY,
 	MOON_POSITION,
 	MOON_VELOCITY,
 	MARS_POSITION,
 	MARS_VELOCITY,
+	JUPITER_POSITION,
+	JUPITER_VELOCITY,
+	SATURN_POSITION,
+	SATURN_VELOCITY,
+	URANUS_POSITION,
+	URANUS_VELOCITY,
+	NEPTUNE_POSITION,
+	NEPTUNE_VELOCITY,
+	TILT_VENUS,
 	TILT_EARTH,
 	TILT_MARS,
+	TILT_JUPITER,
+	TILT_SATURN,
+	TILT_URANUS,
+	TILT_NEPTUNE,
 } from "./constants";
 
 // Physical point light with inverse-square decay, in render units (AU).
 // Illuminance at Earth (~0.98 AU) ≈ 2.5 / 0.98² ≈ 2.6 — bright daylight
-// that stays below the bloom threshold after surface albedo.
-const SUN_LIGHT_INTENSITY = 2.5;
+// that stays below the bloom threshold after surface albedo. Exported so
+// index.ts can scale it (its "light boost" for whatever body is
+// followed) relative to this calibrated baseline.
+export const SUN_LIGHT_INTENSITY = 2.5;
 // HDR multiplier on the sun's surface shader — pushes the disc past the
 // bloom threshold (1.0) so only the sun glows, never the planets — while
 // staying low enough that ACES keeps the granulation detail visible.
@@ -44,11 +88,23 @@ function loadSurfaceTexture(url: string) {
 	return tex;
 }
 
+/** For alpha/data maps (cloud masks, ring alpha) — not colour, so no sRGB decode. */
+function loadDataTexture(url: string) {
+	const tex = textureLoader.load(url);
+	tex.anisotropy = 8;
+	return tex;
+}
+
 // ── Planets ────────────────────────────────────────────
 
 interface PlanetSpec {
 	name: string;
-	textureUrl: string;
+	/** Surface photo texture. Omit (and pass `color`) if none exists yet. */
+	textureUrl?: string;
+	/** Flat fallback colour, used only when `textureUrl` is omitted. */
+	color?: number;
+	/** Optional translucent cloud shell (Earth, Venus-style). */
+	cloudsUrl?: string;
 	radius: number; // m
 	mass: number; // kg
 	position: THREE.Vector3; // m
@@ -57,18 +113,32 @@ interface PlanetSpec {
 }
 
 function createPlanet(scene: THREE.Scene, spec: PlanetSpec): Body {
-	const geo = new THREE.SphereGeometry(spec.radius * RENDER_SCALE, 64, 32);
-	const mat = new THREE.MeshStandardMaterial({
-		map: loadSurfaceTexture(spec.textureUrl),
-		roughness: 1,
-		metalness: 0,
-	});
+	const renderRadius = spec.radius * RENDER_SCALE;
+	const geo = new THREE.SphereGeometry(renderRadius, 64, 32);
+	const mat = new THREE.MeshStandardMaterial(
+		spec.textureUrl
+			? { map: loadSurfaceTexture(spec.textureUrl), roughness: 1, metalness: 0 }
+			: { color: spec.color ?? 0x999999, roughness: 1, metalness: 0 },
+	);
 	const mesh = new THREE.Mesh(geo, mat);
 	if (spec.axialTilt) {
 		// Order ZXY: tilt (z) stays fixed in world space while the daily
 		// spin accumulates on y in the body's own tilted frame.
 		mesh.rotation.order = "ZXY";
 		mesh.rotation.z = spec.axialTilt;
+	}
+	if (spec.cloudsUrl) {
+		// Slightly larger shell, alpha-blended. It's a child of the planet
+		// mesh so it rides along in Body.syncMesh() and inherits the tilt.
+		const cloudGeo = new THREE.SphereGeometry(renderRadius * 1.008, 64, 32);
+		const cloudMat = new THREE.MeshStandardMaterial({
+			color: 0xffffff,
+			alphaMap: loadDataTexture(spec.cloudsUrl),
+			transparent: true,
+			depthWrite: false,
+			roughness: 1,
+		});
+		mesh.add(new THREE.Mesh(cloudGeo, cloudMat));
 	}
 	const body = new Body(
 		mesh,
@@ -82,10 +152,72 @@ function createPlanet(scene: THREE.Scene, spec: PlanetSpec): Body {
 	return body;
 }
 
+/**
+ * Flat ring, radially UV-mapped so a banded texture (inner→outer) reads
+ * correctly — RingGeometry's default UVs run across the bounding box, not
+ * from inner to outer edge, which would smear the texture.
+ */
+function attachRing(
+	planetMesh: THREE.Mesh,
+	innerRadius: number,
+	outerRadius: number,
+	textureUrl: string,
+) {
+	const geo = new THREE.RingGeometry(innerRadius, outerRadius, 128, 1);
+	const pos = geo.attributes.position;
+	const uv = geo.attributes.uv;
+	const v = new THREE.Vector3();
+	for (let i = 0; i < pos.count; i++) {
+		v.fromBufferAttribute(pos, i);
+		const t = (v.length() - innerRadius) / (outerRadius - innerRadius);
+		uv.setXY(i, t, 1);
+	}
+	const tex = loadSurfaceTexture(textureUrl);
+	const mat = new THREE.MeshStandardMaterial({
+		map: tex,
+		alphaMap: tex,
+		transparent: true,
+		side: THREE.DoubleSide,
+		roughness: 1,
+	});
+	const ring = new THREE.Mesh(geo, mat);
+	// RingGeometry lies flat in the XY plane; rotate it into the planet's
+	// equatorial (XZ) plane. The parent's axial-tilt rotation then carries
+	// the ring along with it, same as any other child.
+	ring.rotation.x = Math.PI / 2;
+	planetMesh.add(ring);
+	return ring;
+}
+
+export const createMercury = (scene: THREE.Scene) =>
+	createPlanet(scene, {
+		name: "Mercury",
+		textureUrl: mercuryMap,
+		radius: RADIUS_MERCURY,
+		mass: MASS_MERCURY,
+		position: MERCURY_POSITION,
+		velocity: MERCURY_VELOCITY,
+	});
+
+export const createVenus = (scene: THREE.Scene) =>
+	createPlanet(scene, {
+		name: "Venus",
+		// Venus is permanently cloud-covered, so the "atmosphere" texture
+		// *is* the visible surface — 8k_venus_surface.jpg (radar terrain)
+		// is never actually seen and is left unused for now.
+		textureUrl: venusMap,
+		radius: RADIUS_VENUS,
+		mass: MASS_VENUS,
+		position: VENUS_POSITION,
+		velocity: VENUS_VELOCITY,
+		axialTilt: TILT_VENUS,
+	});
+
 export const createEarth = (scene: THREE.Scene) =>
 	createPlanet(scene, {
 		name: "Earth",
 		textureUrl: earthDayMap,
+		cloudsUrl: earthCloudsMap,
 		radius: RADIUS_EARTH,
 		mass: MASS_EARTH,
 		position: EARTH_POSITION,
@@ -112,6 +244,58 @@ export const createMars = (scene: THREE.Scene) =>
 		position: MARS_POSITION,
 		velocity: MARS_VELOCITY,
 		axialTilt: TILT_MARS,
+	});
+
+export const createJupiter = (scene: THREE.Scene) =>
+	createPlanet(scene, {
+		name: "Jupiter",
+		textureUrl: jupiterMap,
+		radius: RADIUS_JUPITER,
+		mass: MASS_JUPITER,
+		position: JUPITER_POSITION,
+		velocity: JUPITER_VELOCITY,
+		axialTilt: TILT_JUPITER,
+	});
+
+export function createSaturn(scene: THREE.Scene) {
+	const saturn = createPlanet(scene, {
+		name: "Saturn",
+		textureUrl: saturnMap,
+		radius: RADIUS_SATURN,
+		mass: MASS_SATURN,
+		position: SATURN_POSITION,
+		velocity: SATURN_VELOCITY,
+		axialTilt: TILT_SATURN,
+	});
+	attachRing(
+		saturn.mesh,
+		RING_INNER_SATURN * RENDER_SCALE,
+		RING_OUTER_SATURN * RENDER_SCALE,
+		saturnRingMap,
+	);
+	return saturn;
+}
+
+export const createUranus = (scene: THREE.Scene) =>
+	createPlanet(scene, {
+		name: "Uranus",
+		textureUrl: uranusMap,
+		radius: RADIUS_URANUS,
+		mass: MASS_URANUS,
+		position: URANUS_POSITION,
+		velocity: URANUS_VELOCITY,
+		axialTilt: TILT_URANUS,
+	});
+
+export const createNeptune = (scene: THREE.Scene) =>
+	createPlanet(scene, {
+		name: "Neptune",
+		textureUrl: neptuneMap,
+		radius: RADIUS_NEPTUNE,
+		mass: MASS_NEPTUNE,
+		position: NEPTUNE_POSITION,
+		velocity: NEPTUNE_VELOCITY,
+		axialTilt: TILT_NEPTUNE,
 	});
 
 // ── Sun ────────────────────────────────────────────────

@@ -3,7 +3,10 @@ import { OrbitControls } from "three/examples/jsm/Addons.js";
 
 export function createScene() {
 	const scene = new THREE.Scene();
-	scene.background = new THREE.Color(0x06080d);
+	// True black, not a dark navy — the auto-exposure in main.ts can push
+	// exposure to 100x+ for outer planets, and any nonzero clear colour
+	// blows out to solid white at that gain, washing out the whole frame.
+	scene.background = new THREE.Color(0x000000);
 	return scene;
 }
 
